@@ -4,6 +4,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/efritz/glock"
 	"github.com/efritz/overcurrent"
 )
 
@@ -49,21 +50,29 @@ type (
 
 	pool struct {
 		dialer         DialFunc
+		capacity       int
 		logger         Logger
 		breaker        overcurrent.CircuitBreaker
-		capacity       int
+		clock          glock.Clock
 		connections    chan Conn
 		nilConnections chan Conn
 		mutex          *sync.RWMutex
 	}
 )
 
-func NewPool(dialer DialFunc, logger Logger, breaker overcurrent.CircuitBreaker, capacity int) Pool {
+func NewPool(
+	dialer DialFunc,
+	capacity int,
+	logger Logger,
+	breaker overcurrent.CircuitBreaker,
+	clock glock.Clock,
+) Pool {
 	p := &pool{
 		dialer:         dialer,
+		capacity:       capacity,
 		logger:         logger,
 		breaker:        breaker,
-		capacity:       capacity,
+		clock:          clock,
 		connections:    make(chan Conn, capacity),
 		nilConnections: make(chan Conn, capacity),
 		mutex:          &sync.RWMutex{},
@@ -135,7 +144,7 @@ func (p *pool) get(timeout *time.Duration) (Conn, bool) {
 	case conn := <-p.nilConnections:
 		return conn, true
 
-	case <-makeTimeoutChan(timeout):
+	case <-makeTimeoutChan(timeout, p.clock):
 		return nil, false
 	}
 }
@@ -167,10 +176,10 @@ var blockingChan = make(chan time.Time)
 
 // Wraps time.After around a possibly nil-timeout. When timeout is nil this
 // method will return a channel which is always open but never written to.
-func makeTimeoutChan(timeout *time.Duration) <-chan time.Time {
+func makeTimeoutChan(timeout *time.Duration, clock glock.Clock) <-chan time.Time {
 	if timeout == nil {
 		return blockingChan
 	}
 
-	return time.After(*timeout)
+	return clock.After(*timeout)
 }

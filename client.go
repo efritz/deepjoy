@@ -5,6 +5,8 @@ import (
 	"io"
 	"time"
 
+	"github.com/efritz/glock"
+
 	"github.com/bradhe/stopwatch"
 	"github.com/efritz/backoff"
 	"github.com/efritz/overcurrent"
@@ -45,10 +47,11 @@ type (
 		connectTimeout time.Duration
 		readTimeout    time.Duration
 		writeTimeout   time.Duration
-		logger         Logger
-		breaker        overcurrent.CircuitBreaker
 		poolCapacity   int
+		breaker        overcurrent.CircuitBreaker
+		clock          glock.Clock
 		borrowTimeout  *time.Duration
+		logger         Logger
 	}
 
 	ClientConfig func(*clientConfig)
@@ -71,10 +74,11 @@ func NewClient(addr string, configs ...ClientConfig) Client {
 		connectTimeout: time.Second * 5,
 		writeTimeout:   time.Second * 5,
 		readTimeout:    time.Second * 5,
-		logger:         &defaultLogger{},
-		breaker:        defaultBreaker,
 		poolCapacity:   10,
+		breaker:        defaultBreaker,
+		clock:          glock.NewRealClock(),
 		borrowTimeout:  nil,
+		logger:         &defaultLogger{},
 	}
 
 	for _, f := range configs {
@@ -96,9 +100,10 @@ func NewClient(addr string, configs ...ClientConfig) Client {
 	return &client{
 		pool: NewPool(
 			dialer,
+			config.poolCapacity,
 			config.logger,
 			config.breaker,
-			config.poolCapacity,
+			config.clock,
 		),
 		logger: config.logger,
 	}
@@ -128,16 +133,20 @@ func WithPoolCapacity(capacity int) ClientConfig {
 	return func(c *clientConfig) { c.poolCapacity = capacity }
 }
 
-func WithLogger(logger Logger) ClientConfig {
-	return func(c *clientConfig) { c.logger = logger }
-}
-
 func WithBreaker(breaker overcurrent.CircuitBreaker) ClientConfig {
 	return func(c *clientConfig) { c.breaker = breaker }
 }
 
 func WithBorrowTimeout(timeout time.Duration) ClientConfig {
 	return func(c *clientConfig) { c.borrowTimeout = &timeout }
+}
+
+func WithClock(clock glock.Clock) ClientConfig {
+	return func(c *clientConfig) { c.clock = clock }
+}
+
+func WithLogger(logger Logger) ClientConfig {
+	return func(c *clientConfig) { c.logger = logger }
 }
 
 //
