@@ -149,6 +149,7 @@ func WithLogger(logger Logger) ClientConfig {
 	return func(c *clientConfig) { c.logger = logger }
 }
 
+// NewCommand creates a Command instance.
 func NewCommand(command string, args ...interface{}) Command {
 	return Command{
 		Command: command,
