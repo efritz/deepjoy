@@ -168,7 +168,7 @@ func (p *pool) dial() (Conn, bool) {
 		return nil, false
 	}
 
-	p.logger.Printf("Establishd a new connection with Redis")
+	p.logger.Printf("Established a new connection with Redis")
 	return conn, true
 }
 
