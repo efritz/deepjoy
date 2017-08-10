@@ -164,6 +164,10 @@ func (p *pool) dial() (Conn, bool) {
 	})
 
 	if err != nil {
+		// We were dialing a nil connection, put this back in the pool
+		// so that we're not draining our pool on connection errors.
+		p.nilConnections <- nil
+
 		p.logger.Printf("Could not connect to Redis (%s)", err.Error())
 		return nil, false
 	}
