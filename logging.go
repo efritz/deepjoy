@@ -10,8 +10,16 @@ type (
 	}
 
 	defaultLogger struct{}
+	nilLogger     struct{}
 )
+
+func NewNilLogger() Logger {
+	return &nilLogger{}
+}
 
 func (l *defaultLogger) Printf(format string, args ...interface{}) {
 	log.Printf(format, args...)
+}
+
+func (l *nilLogger) Printf(format string, args ...interface{}) {
 }
