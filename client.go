@@ -149,6 +149,13 @@ func WithLogger(logger Logger) ClientConfig {
 	return func(c *clientConfig) { c.logger = logger }
 }
 
+func NewCommand(command string, args ...interface{}) Command {
+	return Command{
+		Command: command,
+		Args:    args,
+	}
+}
+
 //
 // Client Implementation
 

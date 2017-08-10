@@ -14,13 +14,13 @@ type (
 		// Close the connection to the remote Redis server.
 		Close() error
 
-		// Send will publish command as part of a MULTI/EXEC sequence
-		// to the remote Redis server.
-		Send(command string, args ...interface{}) error
-
 		// Do performs a command on the remote Redis server and returns
 		// its result.
 		Do(command string, args ...interface{}) (interface{}, error)
+
+		// Send will publish command as part of a MULTI/EXEC sequence
+		// to the remote Redis server.
+		Send(command string, args ...interface{}) error
 	}
 
 	// Pool abstracts a fixed-size Redis connection pool.

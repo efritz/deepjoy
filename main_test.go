@@ -8,6 +8,8 @@ import (
 	. "github.com/onsi/gomega"
 )
 
+var testLogger = NewNilLogger()
+
 func TestMain(m *testing.M) {
 	RegisterFailHandler(sweet.GomegaFail)
 
@@ -15,5 +17,6 @@ func TestMain(m *testing.M) {
 		s.RegisterPlugin(junit.NewPlugin())
 
 		s.AddSuite(&PoolSuite{})
+		s.AddSuite(&ClientSuite{})
 	})
 }

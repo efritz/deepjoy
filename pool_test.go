@@ -20,7 +20,7 @@ func (s *PoolSuite) TestNewPoolAtCapacity(t *testing.T) {
 		pool  = NewPool(
 			testDial,
 			20,
-			NewNilLogger(),
+			testLogger,
 			overcurrent.NewNoopBreaker(),
 			clock,
 		)
@@ -48,7 +48,7 @@ func (s *PoolSuite) TestPoolDialOnNilConnection(t *testing.T) {
 		pool = NewPool(
 			dial,
 			20,
-			NewNilLogger(),
+			testLogger,
 			overcurrent.NewNoopBreaker(),
 			nil,
 		)
@@ -67,7 +67,7 @@ func (s *PoolSuite) TestPoolDialOnNilConnectionAfterRelease(t *testing.T) {
 		pool  = NewPool(
 			dial,
 			20,
-			NewNilLogger(),
+			testLogger,
 			overcurrent.NewNoopBreaker(),
 			nil,
 		)
@@ -102,7 +102,7 @@ func (s *PoolSuite) TestClose(t *testing.T) {
 		pool       = NewPool(
 			testDial,
 			20,
-			NewNilLogger(),
+			testLogger,
 			overcurrent.NewNoopBreaker(),
 			nil,
 		)
@@ -138,7 +138,7 @@ func (s *PoolSuite) TestCloseBlocks(t *testing.T) {
 		pool  = NewPool(
 			testDial,
 			20,
-			NewNilLogger(),
+			testLogger,
 			overcurrent.NewNoopBreaker(),
 			nil,
 		)
@@ -174,7 +174,7 @@ func (s *PoolSuite) TestBorrowFavorsNonNil(t *testing.T) {
 		pool  = NewPool(
 			func() (Conn, error) { dials++; return conn, nil },
 			20,
-			NewNilLogger(),
+			testLogger,
 			overcurrent.NewNoopBreaker(),
 			nil,
 		)
@@ -206,7 +206,7 @@ func (s *PoolSuite) TestPoolCapacity(t *testing.T) {
 		pool = NewPool(
 			testDial,
 			20,
-			NewNilLogger(),
+			testLogger,
 			overcurrent.NewNoopBreaker(),
 			nil,
 		)
@@ -233,7 +233,7 @@ func (s *PoolSuite) TestBorrowTimeout(t *testing.T) {
 		pool   = NewPool(
 			testDial,
 			20,
-			NewNilLogger(),
+			testLogger,
 			overcurrent.NewNoopBreaker(),
 			clock,
 		)
@@ -259,7 +259,7 @@ func (s *PoolSuite) TestCircuitBreaker(t *testing.T) {
 		pool = NewPool(
 			testDial,
 			20,
-			NewNilLogger(),
+			testLogger,
 			newMockCircuitBreaker(5),
 			nil,
 		)
@@ -285,15 +285,15 @@ func testDial() (Conn, error) {
 
 type mockConn struct {
 	close func() error
-	send  func(command string, args ...interface{}) error
 	do    func(command string, args ...interface{}) (interface{}, error)
+	send  func(command string, args ...interface{}) error
 }
 
 func newMockConn() *mockConn {
 	return &mockConn{
 		close: func() error { return nil },
-		send:  func(command string, args ...interface{}) error { return nil },
 		do:    func(command string, args ...interface{}) (interface{}, error) { return nil, nil },
+		send:  func(command string, args ...interface{}) error { return nil },
 	}
 }
 
@@ -301,12 +301,12 @@ func (c *mockConn) Close() error {
 	return c.close()
 }
 
-func (c *mockConn) Send(command string, args ...interface{}) error {
-	return c.send(command, args...)
-}
-
 func (c *mockConn) Do(command string, args ...interface{}) (interface{}, error) {
 	return c.do(command, args...)
+}
+
+func (c *mockConn) Send(command string, args ...interface{}) error {
+	return c.send(command, args...)
 }
 
 //
