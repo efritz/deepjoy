@@ -35,11 +35,11 @@ defer client.Close()
 Password, database, connect, read, and write timeouts are sent directly to the
 backing redis library. The borrow timeout setting is used to determine how much
 time we will spend waiting on an *empty* pool before returning a no connection
-error back to the user. 
+error back to the user.
 
 The breaker is an instance of an [overcurrent](https://github.com/efritz/overcurrent)
 circuit breaker and is invoked when dialing a new redis connection. If dials are
-failing very rapidly, it is best to back off on the consumer side to let the remote 
+failing very rapidly, it is best to back off on the consumer side to let the remote
 service recover.
 
 A logger is a simple interface with a single Printf function. By default, the
@@ -67,7 +67,7 @@ the same command and variadic list of args as shown above.
 ```go
 result, err := client.Transaction(
     NewCommand("set", "mykey", "myavlue"),
-    NewCommand("expire", "mykey"),
+    NewCommand("expire", "mykey", 120),
 )
 
 if err != nil {
