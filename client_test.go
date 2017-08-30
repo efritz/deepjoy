@@ -3,15 +3,15 @@ package deepjoy
 import (
 	"errors"
 	"io"
-	"testing"
 	"time"
 
+	"github.com/aphistic/sweet"
 	. "github.com/onsi/gomega"
 )
 
 type ClientSuite struct{}
 
-func (s *ClientSuite) TestClose(t *testing.T) {
+func (s *ClientSuite) TestClose(t sweet.T) {
 	var (
 		pool   = newMockPool()
 		called = false
@@ -26,7 +26,7 @@ func (s *ClientSuite) TestClose(t *testing.T) {
 	Expect(called).To(BeTrue())
 }
 
-func (s *ClientSuite) TestDo(t *testing.T) {
+func (s *ClientSuite) TestDo(t sweet.T) {
 	var (
 		pool     = newMockPool()
 		conn     = newMockConn()
@@ -54,7 +54,7 @@ func (s *ClientSuite) TestDo(t *testing.T) {
 	Expect(released).To(Receive(Equal(conn)))
 }
 
-func (s *ClientSuite) TestDoNoConnection(t *testing.T) {
+func (s *ClientSuite) TestDoNoConnection(t sweet.T) {
 	var (
 		pool     = newMockPool()
 		released = make(chan Conn, 1)
@@ -78,7 +78,7 @@ func (s *ClientSuite) TestDoNoConnection(t *testing.T) {
 	Consistently(released).ShouldNot(Receive())
 }
 
-func (s *ClientSuite) TestDoError(t *testing.T) {
+func (s *ClientSuite) TestDoError(t sweet.T) {
 	var (
 		pool     = newMockPool()
 		conn     = newMockConn()
@@ -105,7 +105,7 @@ func (s *ClientSuite) TestDoError(t *testing.T) {
 	Expect(released).To(Receive(BeNil()))
 }
 
-func (s *ClientSuite) TestDoRetryableError(t *testing.T) {
+func (s *ClientSuite) TestDoRetryableError(t sweet.T) {
 	var (
 		pool        = newMockPool()
 		conn1       = newMockConn()
@@ -142,7 +142,7 @@ func (s *ClientSuite) TestDoRetryableError(t *testing.T) {
 	Expect(released).To(Receive(Equal(conn2)))
 }
 
-func (s *ClientSuite) TestTransaction(t *testing.T) {
+func (s *ClientSuite) TestTransaction(t sweet.T) {
 	var (
 		pool     = newMockPool()
 		conn     = newMockConn()
@@ -190,7 +190,7 @@ func (s *ClientSuite) TestTransaction(t *testing.T) {
 	Consistently(commands).ShouldNot(Receive())
 }
 
-func (s *ClientSuite) TestTransactionNoConnection(t *testing.T) {
+func (s *ClientSuite) TestTransactionNoConnection(t sweet.T) {
 	var (
 		pool     = newMockPool()
 		released = make(chan Conn, 1)
@@ -214,7 +214,7 @@ func (s *ClientSuite) TestTransactionNoConnection(t *testing.T) {
 	Consistently(released).ShouldNot(Receive())
 }
 
-func (s *ClientSuite) TestTransactionError(t *testing.T) {
+func (s *ClientSuite) TestTransactionError(t sweet.T) {
 	var (
 		pool     = newMockPool()
 		conn     = newMockConn()
@@ -250,7 +250,7 @@ func (s *ClientSuite) TestTransactionError(t *testing.T) {
 	Eventually(released).Should(Receive(BeNil()))
 }
 
-func (s *ClientSuite) TestTransactionRetryableError(t *testing.T) {
+func (s *ClientSuite) TestTransactionRetryableError(t sweet.T) {
 	var (
 		pool        = newMockPool()
 		conn1       = newMockConn()
@@ -296,7 +296,7 @@ func (s *ClientSuite) TestTransactionRetryableError(t *testing.T) {
 	Eventually(released).Should(Receive(Equal(conn2)))
 }
 
-func (s *ClientSuite) TestTransactionRetryableErrorAfterMulti(t *testing.T) {
+func (s *ClientSuite) TestTransactionRetryableErrorAfterMulti(t sweet.T) {
 	var (
 		pool        = newMockPool()
 		conn        = newMockConn()

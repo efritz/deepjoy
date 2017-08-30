@@ -2,19 +2,17 @@ package deepjoy
 
 import (
 	"context"
-	"testing"
 	"time"
 
-	"github.com/efritz/overcurrent"
-
+	"github.com/aphistic/sweet"
 	"github.com/efritz/glock"
-
+	"github.com/efritz/overcurrent"
 	. "github.com/onsi/gomega"
 )
 
 type PoolSuite struct{}
 
-func (s *PoolSuite) TestNewPoolAtCapacity(t *testing.T) {
+func (s *PoolSuite) TestNewPoolAtCapacity(t sweet.T) {
 	var (
 		clock = glock.NewMockClock()
 		sync  = make(chan struct{})
@@ -42,7 +40,7 @@ func (s *PoolSuite) TestNewPoolAtCapacity(t *testing.T) {
 	<-sync
 }
 
-func (s *PoolSuite) TestPoolDialOnNilConnection(t *testing.T) {
+func (s *PoolSuite) TestPoolDialOnNilConnection(t sweet.T) {
 	var (
 		conn = newMockConn()
 		dial = func() (Conn, error) { return conn, nil }
@@ -60,7 +58,7 @@ func (s *PoolSuite) TestPoolDialOnNilConnection(t *testing.T) {
 	Expect(ok).To(BeTrue())
 }
 
-func (s *PoolSuite) TestPoolDialOnNilConnectionAfterRelease(t *testing.T) {
+func (s *PoolSuite) TestPoolDialOnNilConnectionAfterRelease(t sweet.T) {
 	var (
 		dials = 0
 		conn  = newMockConn()
@@ -96,7 +94,7 @@ func (s *PoolSuite) TestPoolDialOnNilConnectionAfterRelease(t *testing.T) {
 	Expect(dials).To(Equal(30))
 }
 
-func (s *PoolSuite) TestClose(t *testing.T) {
+func (s *PoolSuite) TestClose(t sweet.T) {
 	var (
 		closeCount = 0
 		conn       = newMockConn()
@@ -131,7 +129,7 @@ func (s *PoolSuite) TestClose(t *testing.T) {
 	Expect(closeCount).To(Equal(10))
 }
 
-func (s *PoolSuite) TestCloseBlocks(t *testing.T) {
+func (s *PoolSuite) TestCloseBlocks(t sweet.T) {
 	var (
 		sync  = make(chan struct{})
 		block = make(chan struct{})
@@ -168,7 +166,7 @@ func (s *PoolSuite) TestCloseBlocks(t *testing.T) {
 	Eventually(sync).Should(BeClosed())
 }
 
-func (s *PoolSuite) TestBorrowFavorsNonNil(t *testing.T) {
+func (s *PoolSuite) TestBorrowFavorsNonNil(t sweet.T) {
 	var (
 		dials = 0
 		conn  = newMockConn()
@@ -201,7 +199,7 @@ func (s *PoolSuite) TestBorrowFavorsNonNil(t *testing.T) {
 	Expect(dials).To(Equal(3))
 }
 
-func (s *PoolSuite) TestPoolCapacity(t *testing.T) {
+func (s *PoolSuite) TestPoolCapacity(t sweet.T) {
 	var (
 		sync = make(chan struct{})
 		pool = NewPool(
@@ -227,7 +225,7 @@ func (s *PoolSuite) TestPoolCapacity(t *testing.T) {
 	Eventually(sync).Should(BeClosed())
 }
 
-func (s *PoolSuite) TestBorrowTimeout(t *testing.T) {
+func (s *PoolSuite) TestBorrowTimeout(t sweet.T) {
 	var (
 		result = make(chan bool)
 		clock  = glock.NewMockClock()
@@ -255,7 +253,7 @@ func (s *PoolSuite) TestBorrowTimeout(t *testing.T) {
 	Eventually(result).Should(Receive(Equal(false)))
 }
 
-func (s *PoolSuite) TestCircuitBreaker(t *testing.T) {
+func (s *PoolSuite) TestCircuitBreaker(t sweet.T) {
 	var (
 		pool = NewPool(
 			testDial,
