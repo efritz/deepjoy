@@ -1,6 +1,7 @@
 package deepjoy
 
 import (
+	"context"
 	"sync"
 	"time"
 
@@ -157,7 +158,7 @@ func (p *pool) dial() (Conn, bool) {
 	defer p.mutex.Unlock()
 
 	var conn Conn
-	err := p.breaker.Call(func() error {
+	err := p.breaker.Call(func(ctx context.Context) error {
 		temp, err := p.dialer()
 		conn = temp
 		return err

@@ -1,6 +1,7 @@
 package deepjoy
 
 import (
+	"context"
 	"testing"
 	"time"
 
@@ -324,11 +325,15 @@ func (b *mockCircuitBreaker) Trip()                     {}
 func (b *mockCircuitBreaker) Reset()                    {}
 func (b *mockCircuitBreaker) ShouldTry() bool           { return true }
 func (b *mockCircuitBreaker) MarkResult(err error) bool { return true }
-func (b *mockCircuitBreaker) Call(f func() error) error {
+func (b *mockCircuitBreaker) Call(f overcurrent.BreakerFunc) error {
 	if b.tripAfter <= 0 {
 		return overcurrent.ErrCircuitOpen
 	}
 
 	b.tripAfter--
-	return f()
+	return f(context.Background())
+}
+
+func (b *mockCircuitBreaker) CallAsync(f overcurrent.BreakerFunc) <-chan error {
+	return nil
 }
