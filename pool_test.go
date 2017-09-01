@@ -20,7 +20,7 @@ func (s *PoolSuite) TestNewPoolAtCapacity(t sweet.T) {
 			testDial,
 			20,
 			testLogger,
-			overcurrent.NewNoopBreaker(),
+			noopBreakerFunc,
 			clock,
 		)
 	)
@@ -48,7 +48,7 @@ func (s *PoolSuite) TestPoolDialOnNilConnection(t sweet.T) {
 			dial,
 			20,
 			testLogger,
-			overcurrent.NewNoopBreaker(),
+			noopBreakerFunc,
 			nil,
 		)
 	)
@@ -67,7 +67,7 @@ func (s *PoolSuite) TestPoolDialOnNilConnectionAfterRelease(t sweet.T) {
 			dial,
 			20,
 			testLogger,
-			overcurrent.NewNoopBreaker(),
+			noopBreakerFunc,
 			nil,
 		)
 	)
@@ -102,7 +102,7 @@ func (s *PoolSuite) TestClose(t sweet.T) {
 			testDial,
 			20,
 			testLogger,
-			overcurrent.NewNoopBreaker(),
+			noopBreakerFunc,
 			nil,
 		)
 	)
@@ -138,7 +138,7 @@ func (s *PoolSuite) TestCloseBlocks(t sweet.T) {
 			testDial,
 			20,
 			testLogger,
-			overcurrent.NewNoopBreaker(),
+			noopBreakerFunc,
 			nil,
 		)
 	)
@@ -174,7 +174,7 @@ func (s *PoolSuite) TestBorrowFavorsNonNil(t sweet.T) {
 			func() (Conn, error) { dials++; return conn, nil },
 			20,
 			testLogger,
-			overcurrent.NewNoopBreaker(),
+			noopBreakerFunc,
 			nil,
 		)
 	)
@@ -206,7 +206,7 @@ func (s *PoolSuite) TestPoolCapacity(t sweet.T) {
 			testDial,
 			20,
 			testLogger,
-			overcurrent.NewNoopBreaker(),
+			noopBreakerFunc,
 			nil,
 		)
 	)
@@ -233,7 +233,7 @@ func (s *PoolSuite) TestBorrowTimeout(t sweet.T) {
 			testDial,
 			20,
 			testLogger,
-			overcurrent.NewNoopBreaker(),
+			noopBreakerFunc,
 			clock,
 		)
 	)
@@ -255,11 +255,21 @@ func (s *PoolSuite) TestBorrowTimeout(t sweet.T) {
 
 func (s *PoolSuite) TestCircuitBreaker(t sweet.T) {
 	var (
+		count       = 5
+		breakerFunc = func(f overcurrent.BreakerFunc) error {
+			if count <= 0 {
+				return overcurrent.ErrCircuitOpen
+			}
+
+			count--
+			return f(context.Background())
+		}
+
 		pool = NewPool(
 			testDial,
 			20,
 			testLogger,
-			newMockCircuitBreaker(5),
+			breakerFunc,
 			nil,
 		)
 	)
@@ -306,32 +316,4 @@ func (c *mockConn) Do(command string, args ...interface{}) (interface{}, error) 
 
 func (c *mockConn) Send(command string, args ...interface{}) error {
 	return c.send(command, args...)
-}
-
-//
-// Circuit Breaker
-
-type mockCircuitBreaker struct {
-	tripAfter int
-}
-
-func newMockCircuitBreaker(tripAfter int) overcurrent.CircuitBreaker {
-	return &mockCircuitBreaker{tripAfter: tripAfter}
-}
-
-func (b *mockCircuitBreaker) Trip()                     {}
-func (b *mockCircuitBreaker) Reset()                    {}
-func (b *mockCircuitBreaker) ShouldTry() bool           { return true }
-func (b *mockCircuitBreaker) MarkResult(err error) bool { return true }
-func (b *mockCircuitBreaker) Call(f overcurrent.BreakerFunc) error {
-	if b.tripAfter <= 0 {
-		return overcurrent.ErrCircuitOpen
-	}
-
-	b.tripAfter--
-	return f(context.Background())
-}
-
-func (b *mockCircuitBreaker) CallAsync(f overcurrent.BreakerFunc) <-chan error {
-	return nil
 }

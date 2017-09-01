@@ -1,6 +1,7 @@
 package deepjoy
 
 import (
+	"context"
 	"errors"
 	"io"
 	"time"
@@ -8,7 +9,6 @@ import (
 	"github.com/efritz/glock"
 
 	"github.com/bradhe/stopwatch"
-	"github.com/efritz/backoff"
 	"github.com/efritz/overcurrent"
 	"github.com/garyburd/redigo/redis"
 )
@@ -48,26 +48,24 @@ type (
 		readTimeout    time.Duration
 		writeTimeout   time.Duration
 		poolCapacity   int
-		breaker        overcurrent.CircuitBreaker
+		breakerFunc    BreakerFunc
 		clock          glock.Clock
 		borrowTimeout  *time.Duration
 		logger         Logger
 	}
 
 	ClientConfig func(*clientConfig)
+	BreakerFunc  func(overcurrent.BreakerFunc) error
 )
+
+func noopBreakerFunc(f overcurrent.BreakerFunc) error {
+	return f(context.Background())
+}
 
 var ErrNoConnection = errors.New("no connection available in pool")
 
 // NewClient creates a new Client.
 func NewClient(addr string, configs ...ClientConfig) Client {
-	defaultBreaker := overcurrent.NewCircuitBreaker(
-		overcurrent.WithHalfClosedRetryProbability(1.0),
-		overcurrent.WithResetBackoff(backoff.NewConstantBackoff(time.Second*5)),
-		overcurrent.WithFailureInterpreter(overcurrent.NewAnyErrorFailureInterpreter()),
-		overcurrent.WithTripCondition(overcurrent.NewConsecutiveFailureTripCondition(1)),
-	)
-
 	config := &clientConfig{
 		password:       "",
 		database:       0,
@@ -75,7 +73,7 @@ func NewClient(addr string, configs ...ClientConfig) Client {
 		writeTimeout:   time.Second * 5,
 		readTimeout:    time.Second * 5,
 		poolCapacity:   10,
-		breaker:        defaultBreaker,
+		breakerFunc:    noopBreakerFunc,
 		clock:          glock.NewRealClock(),
 		borrowTimeout:  nil,
 		logger:         &defaultLogger{},
@@ -102,7 +100,7 @@ func NewClient(addr string, configs ...ClientConfig) Client {
 			dialer,
 			config.poolCapacity,
 			config.logger,
-			config.breaker,
+			config.breakerFunc,
 			config.clock,
 		),
 		logger: config.logger,
@@ -134,7 +132,15 @@ func WithPoolCapacity(capacity int) ClientConfig {
 }
 
 func WithBreaker(breaker overcurrent.CircuitBreaker) ClientConfig {
-	return func(c *clientConfig) { c.breaker = breaker }
+	return func(c *clientConfig) { c.breakerFunc = breaker.Call }
+}
+
+func WithBreakerRegistry(registry overcurrent.Registry, name string) ClientConfig {
+	return func(c *clientConfig) {
+		c.breakerFunc = func(f overcurrent.BreakerFunc) error {
+			return registry.Call(name, f, nil)
+		}
+	}
 }
 
 func WithBorrowTimeout(timeout time.Duration) ClientConfig {

@@ -6,7 +6,6 @@ import (
 	"time"
 
 	"github.com/efritz/glock"
-	"github.com/efritz/overcurrent"
 )
 
 type (
@@ -53,7 +52,7 @@ type (
 		dialer         DialFunc
 		capacity       int
 		logger         Logger
-		breaker        overcurrent.CircuitBreaker
+		breakerFunc    BreakerFunc
 		clock          glock.Clock
 		connections    chan Conn
 		nilConnections chan Conn
@@ -65,14 +64,14 @@ func NewPool(
 	dialer DialFunc,
 	capacity int,
 	logger Logger,
-	breaker overcurrent.CircuitBreaker,
+	breakerFunc BreakerFunc,
 	clock glock.Clock,
 ) Pool {
 	p := &pool{
 		dialer:         dialer,
 		capacity:       capacity,
 		logger:         logger,
-		breaker:        breaker,
+		breakerFunc:    breakerFunc,
 		clock:          clock,
 		connections:    make(chan Conn, capacity),
 		nilConnections: make(chan Conn, capacity),
@@ -158,7 +157,7 @@ func (p *pool) dial() (Conn, bool) {
 	defer p.mutex.Unlock()
 
 	var conn Conn
-	err := p.breaker.Call(func(ctx context.Context) error {
+	err := p.breakerFunc(func(ctx context.Context) error {
 		temp, err := p.dialer()
 		conn = temp
 		return err
