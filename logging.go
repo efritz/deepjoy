@@ -13,6 +13,7 @@ type (
 	nilLogger     struct{}
 )
 
+// NewNilLogger creates a silent logger.
 func NewNilLogger() Logger {
 	return &nilLogger{}
 }

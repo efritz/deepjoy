@@ -1,14 +1,12 @@
 package deepjoy
 
 import (
-	"context"
 	"errors"
 	"io"
 	"time"
 
-	"github.com/efritz/glock"
-
 	"github.com/bradhe/stopwatch"
+	"github.com/efritz/glock"
 	"github.com/efritz/overcurrent"
 	"github.com/garyburd/redigo/redis"
 )
@@ -54,18 +52,15 @@ type (
 		logger         Logger
 	}
 
-	ClientConfig func(*clientConfig)
-	BreakerFunc  func(overcurrent.BreakerFunc) error
+	// ConfigFunc is a function used to initialize a new client.
+	ConfigFunc func(*clientConfig)
 )
 
-func noopBreakerFunc(f overcurrent.BreakerFunc) error {
-	return f(context.Background())
-}
-
+// ErrNoConnection is returned when the borrow timeout elapses.
 var ErrNoConnection = errors.New("no connection available in pool")
 
 // NewClient creates a new Client.
-func NewClient(addr string, configs ...ClientConfig) Client {
+func NewClient(addr string, configs ...ConfigFunc) Client {
 	config := &clientConfig{
 		password:       "",
 		database:       0,
@@ -107,35 +102,50 @@ func NewClient(addr string, configs ...ClientConfig) Client {
 	}
 }
 
-func WithPassword(password string) ClientConfig {
+// WithPassword sets the password (default is ""),
+func WithPassword(password string) ConfigFunc {
 	return func(c *clientConfig) { c.password = password }
 }
 
-func WithDatabase(database int) ClientConfig {
+// WithDatabase sets the database index (default is 0).
+func WithDatabase(database int) ConfigFunc {
 	return func(c *clientConfig) { c.database = database }
 }
 
-func WithConnectTimeout(timeout time.Duration) ClientConfig {
+// WithConnectTimeout sets the connect timeout for new connections
+// (default is 5 seconds).
+func WithConnectTimeout(timeout time.Duration) ConfigFunc {
 	return func(c *clientConfig) { c.connectTimeout = timeout }
 }
 
-func WithReadTimeout(timeout time.Duration) ClientConfig {
+// WithReadTimeout sets the read timeout for all connections in the
+// pool (default is 5 seconds).
+func WithReadTimeout(timeout time.Duration) ConfigFunc {
 	return func(c *clientConfig) { c.readTimeout = timeout }
 }
 
-func WithWriteTimeout(timeout time.Duration) ClientConfig {
+// WithWriteTimeout sets the write timeout for all connections in the
+// pool (default is 5 seconds).
+func WithWriteTimeout(timeout time.Duration) ConfigFunc {
 	return func(c *clientConfig) { c.writeTimeout = timeout }
 }
 
-func WithPoolCapacity(capacity int) ClientConfig {
+// WithPoolCapacity sets the maximum number of concurrent connections
+// that can be in use at once (default is 10).
+func WithPoolCapacity(capacity int) ConfigFunc {
 	return func(c *clientConfig) { c.poolCapacity = capacity }
 }
 
-func WithBreaker(breaker overcurrent.CircuitBreaker) ClientConfig {
+// WithBreaker sets the circuit breaker instance to use around new
+// connections. The default uses a no-op circuit breaker.
+func WithBreaker(breaker overcurrent.CircuitBreaker) ConfigFunc {
 	return func(c *clientConfig) { c.breakerFunc = breaker.Call }
 }
 
-func WithBreakerRegistry(registry overcurrent.Registry, name string) ClientConfig {
+// WithBreakerRegistry sets the overcurrent registry to use and the
+// name of the circuit breaker config tu use around new connections.
+// The default uses a no-op circuit breaker.
+func WithBreakerRegistry(registry overcurrent.Registry, name string) ConfigFunc {
 	return func(c *clientConfig) {
 		c.breakerFunc = func(f overcurrent.BreakerFunc) error {
 			return registry.Call(name, f, nil)
@@ -143,16 +153,19 @@ func WithBreakerRegistry(registry overcurrent.Registry, name string) ClientConfi
 	}
 }
 
-func WithBorrowTimeout(timeout time.Duration) ClientConfig {
+// WithBorrowTimeout sets the maximum time
+func WithBorrowTimeout(timeout time.Duration) ConfigFunc {
 	return func(c *clientConfig) { c.borrowTimeout = &timeout }
 }
 
-func WithClock(clock glock.Clock) ClientConfig {
-	return func(c *clientConfig) { c.clock = clock }
+// WithLogger sets the logger instance (the default will use Go's
+// builtin logging library).
+func WithLogger(logger Logger) ConfigFunc {
+	return func(c *clientConfig) { c.logger = logger }
 }
 
-func WithLogger(logger Logger) ClientConfig {
-	return func(c *clientConfig) { c.logger = logger }
+func withClock(clock glock.Clock) ConfigFunc {
+	return func(c *clientConfig) { c.clock = clock }
 }
 
 // NewCommand creates a Command instance.

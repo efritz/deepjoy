@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/efritz/glock"
+	"github.com/efritz/overcurrent"
 )
 
 type (
@@ -46,7 +47,12 @@ type (
 		Release(conn Conn)
 	}
 
+	// DialFunc creates a connection to Redis or returns an error.
 	DialFunc func() (Conn, error)
+
+	// BreakerFunc bridges the interface between the Call function of
+	// an overcurrent breaker and an overcurrent registry.
+	BreakerFunc func(overcurrent.BreakerFunc) error
 
 	pool struct {
 		dialer         DialFunc
@@ -60,6 +66,11 @@ type (
 	}
 )
 
+func noopBreakerFunc(f overcurrent.BreakerFunc) error {
+	return f(context.Background())
+}
+
+// NewPool creates a pool with initially nil-connections.
 func NewPool(
 	dialer DialFunc,
 	capacity int,
