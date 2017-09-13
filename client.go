@@ -102,7 +102,7 @@ func NewClient(addr string, configs ...ConfigFunc) Client {
 	}
 }
 
-// WithPassword sets the password (default is ""),
+// WithPassword sets the password (default is "").
 func WithPassword(password string) ConfigFunc {
 	return func(c *clientConfig) { c.password = password }
 }
