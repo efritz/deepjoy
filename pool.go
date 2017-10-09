@@ -62,7 +62,7 @@ type (
 		clock          glock.Clock
 		connections    chan Conn
 		nilConnections chan Conn
-		mutex          *sync.RWMutex
+		mutex          sync.RWMutex
 	}
 )
 
@@ -86,7 +86,6 @@ func NewPool(
 		clock:          clock,
 		connections:    make(chan Conn, capacity),
 		nilConnections: make(chan Conn, capacity),
-		mutex:          &sync.RWMutex{},
 	}
 
 	// Set the capacity of the pool. Each time a nil value is borrowed, a new
