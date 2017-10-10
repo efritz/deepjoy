@@ -101,7 +101,9 @@ func NewPool(
 func (p *pool) Close() {
 	for i := 0; i < p.capacity; i++ {
 		if conn, _ := p.get(nil); conn != nil {
-			conn.Close()
+			if err := conn.Close(); err != nil {
+				p.logger.Printf("Could not close connection (%s)", err.Error())
+			}
 		}
 	}
 

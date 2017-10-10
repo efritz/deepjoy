@@ -164,10 +164,6 @@ func WithLogger(logger Logger) ConfigFunc {
 	return func(c *clientConfig) { c.logger = logger }
 }
 
-func withClock(clock glock.Clock) ConfigFunc {
-	return func(c *clientConfig) { c.clock = clock }
-}
-
 // NewCommand creates a Command instance.
 func NewCommand(command string, args ...interface{}) Command {
 	return Command{
@@ -276,7 +272,10 @@ func (c *client) borrow() (Conn, bool) {
 // code path then the capacity of the pool permanently decreases).
 func (c *client) release(conn Conn, err error) {
 	if err != nil {
-		conn.Close()
+		if err := conn.Close(); err != nil {
+			c.logger.Printf("Could not close connection (%s)", err.Error())
+		}
+
 		conn = nil
 	}
 
