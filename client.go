@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/bradhe/stopwatch"
+	"github.com/efritz/backoff"
 	"github.com/efritz/glock"
 	"github.com/efritz/overcurrent"
 	"github.com/garyburd/redigo/redis"
@@ -36,6 +37,7 @@ type (
 	client struct {
 		pool          Pool
 		borrowTimeout *time.Duration
+		clock         glock.Clock
 		logger        Logger
 	}
 
@@ -100,6 +102,7 @@ func NewClient(addr string, configs ...ConfigFunc) Client {
 			config.breakerFunc,
 			config.clock,
 		),
+		clock:  config.clock,
 		logger: config.logger,
 	}
 }
@@ -193,6 +196,8 @@ func (c *client) Transaction(commands ...Command) (interface{}, error) {
 // Client Helper Functions
 
 func (c *client) withRetry(f retryableFunc) (interface{}, error) {
+	backoff := backoff.NewLinearBackoff(time.Millisecond, time.Millisecond*250, time.Second*5)
+
 	for {
 		if result, err := f(); err == nil || !shouldRetry(err) {
 			return result, err
@@ -202,6 +207,11 @@ func (c *client) withRetry(f retryableFunc) (interface{}, error) {
 		// reaped by a proxy (depending on your network topology). If
 		// we have an IO error, we can try again.
 		c.logger.Printf("Connection from pool was stale, retrying")
+
+		// Don't thrash the pool if this is an external problem (this
+		// should not be the case, but I'm not in the habit of hiding
+		// high-churn retry loops in libraries).
+		<-c.clock.After(backoff.NextInterval())
 	}
 }
 

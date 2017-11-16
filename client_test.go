@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/aphistic/sweet"
+	"github.com/efritz/glock"
 	. "github.com/onsi/gomega"
 )
 
@@ -110,9 +111,10 @@ func (s *ClientSuite) TestDoRetryableError(t sweet.T) {
 		pool        = newMockPool()
 		conn1       = newMockConn()
 		conn2       = newMockConn()
+		clock       = glock.NewMockClock()
 		borrowCount = 0
 		released    = make(chan Conn, 2)
-		c           = &client{pool: pool, logger: testLogger}
+		c           = &client{pool: pool, clock: clock, logger: testLogger}
 	)
 
 	defer close(released)
@@ -134,6 +136,11 @@ func (s *ClientSuite) TestDoRetryableError(t sweet.T) {
 	conn2.do = func(command string, args ...interface{}) (interface{}, error) {
 		return []string{"BAR", "BAZ", "QUUX"}, nil
 	}
+
+	go func() {
+		// Unlock the after call in client
+		clock.BlockingAdvance(time.Second)
+	}()
 
 	result, err := c.Do("upper", "bar", "baz", "quux")
 	Expect(err).To(BeNil())
@@ -254,10 +261,11 @@ func (s *ClientSuite) TestTransactionRetryableError(t sweet.T) {
 	var (
 		pool        = newMockPool()
 		conn1       = newMockConn()
+		clock       = glock.NewMockClock()
 		borrowCount = 0
 		conn2       = newMockConn()
 		released    = make(chan Conn, 2)
-		c           = &client{pool: pool, logger: testLogger}
+		c           = &client{pool: pool, clock: clock, logger: testLogger}
 	)
 
 	defer close(released)
@@ -284,6 +292,11 @@ func (s *ClientSuite) TestTransactionRetryableError(t sweet.T) {
 		return nil
 	}
 
+	go func() {
+		// Unlock the after call in client
+		clock.BlockingAdvance(time.Second)
+	}()
+
 	result, err := c.Transaction(
 		NewCommand("foo", 1, 2, 3),
 		NewCommand("bar", 2, 3, 4),
@@ -300,10 +313,11 @@ func (s *ClientSuite) TestTransactionRetryableErrorAfterMulti(t sweet.T) {
 	var (
 		pool        = newMockPool()
 		conn1       = newMockConn()
+		clock       = glock.NewMockClock()
 		borrowCount = 0
 		conn2       = newMockConn()
 		released    = make(chan Conn, 2)
-		c           = &client{pool: pool, logger: testLogger}
+		c           = &client{pool: pool, clock: clock, logger: testLogger}
 	)
 
 	defer close(released)
@@ -329,6 +343,11 @@ func (s *ClientSuite) TestTransactionRetryableErrorAfterMulti(t sweet.T) {
 
 		return nil
 	}
+
+	go func() {
+		// Unlock the after call in client
+		clock.BlockingAdvance(time.Second)
+	}()
 
 	result, err := c.Transaction(
 		NewCommand("foo", 1, 2, 3),
