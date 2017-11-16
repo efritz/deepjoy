@@ -52,6 +52,8 @@ type (
 		logger         Logger
 	}
 
+	retryableFunc func() (interface{}, error)
+
 	// ConfigFunc is a function used to initialize a new client.
 	ConfigFunc func(*clientConfig)
 )
@@ -180,45 +182,52 @@ func (c *client) Close() {
 }
 
 func (c *client) Do(command string, args ...interface{}) (interface{}, error) {
+	return c.withRetry(func() (interface{}, error) { return c.do(command, args) })
+}
+
+func (c *client) Transaction(commands ...Command) (interface{}, error) {
+	return c.withRetry(func() (interface{}, error) { return c.transaction(commands...) })
+}
+
+//
+// Client Helper Functions
+
+func (c *client) withRetry(f retryableFunc) (interface{}, error) {
+	for {
+		if result, err := f(); err == nil || !shouldRetry(err) {
+			return result, err
+		}
+
+		// The TCP connection to the remote Redis server may have been
+		// reaped by a proxy (depending on your network topology). If
+		// we have an IO error, we can try again.
+		c.logger.Printf("Connection from pool was stale, retrying")
+	}
+}
+
+// Invoke a command and release the connection back to the pool.
+func (c *client) do(command string, args []interface{}) (interface{}, error) {
 	conn, ok := c.timedBorrow()
 	if !ok {
 		return nil, ErrNoConnection
 	}
 
-	result, err := c.doWithConn(conn, command, args)
-
-	if err != nil && shouldRetry(err) {
-		// The TCP connection to the remote Redis server may have been
-		// reaped by a proxy (depending on your network topology). If
-		// we have an IO error, we can try again.
-		c.logger.Printf("Connection from pool was stale, retrying")
-		return c.Do(command, args...)
-	}
-
+	result, err := conn.Do(command, args...)
+	c.release(conn, err)
 	return result, err
 }
 
-func (c *client) Transaction(commands ...Command) (interface{}, error) {
+// Invoke a series of commands and release the connection back to the pool.
+func (c *client) transaction(commands ...Command) (interface{}, error) {
 	conn, ok := c.timedBorrow()
 	if !ok {
 		return nil, ErrNoConnection
 	}
 
 	if err := conn.Send("MULTI"); err != nil {
-		// Ensure connection is released after MULTI error
 		c.release(conn, err)
-
-		if shouldRetry(err) {
-			c.logger.Printf("Connection from pool was stale, retrying")
-			return c.Transaction(commands...)
-		}
-
 		return nil, err
 	}
-
-	// After this point if we get an error we immediately return. We can't
-	// safely retry anything after we've sent the MULTI as pipelined commands
-	// aren't really atomic.
 
 	for _, command := range commands {
 		if err := conn.Send(command.Command, command.Args...); err != nil {
@@ -227,15 +236,7 @@ func (c *client) Transaction(commands ...Command) (interface{}, error) {
 		}
 	}
 
-	return c.doWithConn(conn, "EXEC", nil)
-}
-
-//
-// Client Helper Functions
-
-// Invoke a command and release the connection back to the pool.
-func (c *client) doWithConn(conn Conn, command string, args []interface{}) (interface{}, error) {
-	result, err := conn.Do(command, args...)
+	result, err := conn.Do("EXEC")
 	c.release(conn, err)
 	return result, err
 }

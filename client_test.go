@@ -299,8 +299,9 @@ func (s *ClientSuite) TestTransactionRetryableError(t sweet.T) {
 func (s *ClientSuite) TestTransactionRetryableErrorAfterMulti(t sweet.T) {
 	var (
 		pool        = newMockPool()
-		conn        = newMockConn()
+		conn1       = newMockConn()
 		borrowCount = 0
+		conn2       = newMockConn()
 		released    = make(chan Conn, 2)
 		c           = &client{pool: pool, logger: testLogger}
 	)
@@ -308,31 +309,37 @@ func (s *ClientSuite) TestTransactionRetryableErrorAfterMulti(t sweet.T) {
 	defer close(released)
 
 	pool.borrow = func() (Conn, bool) {
+		c := []Conn{conn1, conn2}[borrowCount]
 		borrowCount++
-		return conn, true
+		return c, true
 	}
 
 	pool.release = func(conn Conn) {
 		released <- conn
 	}
 
-	conn.send = func(command string, args ...interface{}) error {
-		if command == "bar" {
+	conn2.do = func(command string, args ...interface{}) (interface{}, error) {
+		return []int{1, 2, 3, 4}, nil
+	}
+
+	conn1.send = func(command string, args ...interface{}) error {
+		if borrowCount == 1 && command == "bar" {
 			return io.ErrUnexpectedEOF
 		}
 
 		return nil
 	}
 
-	_, err := c.Transaction(
+	result, err := c.Transaction(
 		NewCommand("foo", 1, 2, 3),
 		NewCommand("bar", 2, 3, 4),
 		NewCommand("baz", 3, 4, 5),
 	)
 
-	Expect(borrowCount).To(Equal(1))
-	Expect(err).To(Equal(io.ErrUnexpectedEOF))
+	Expect(result).To(Equal([]int{1, 2, 3, 4}))
+	Expect(err).To(BeNil())
 	Eventually(released).Should(Receive(BeNil()))
+	Eventually(released).Should(Receive(Equal(conn2)))
 }
 
 //
