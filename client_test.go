@@ -16,7 +16,7 @@ func (s *ClientSuite) TestClose(t sweet.T) {
 	var (
 		pool   = newMockPool()
 		called = false
-		c      = &client{pool: pool, logger: testLogger}
+		c      = makeClient(pool, nil)
 	)
 
 	pool.close = func() {
@@ -32,7 +32,7 @@ func (s *ClientSuite) TestDo(t sweet.T) {
 		pool     = newMockPool()
 		conn     = newMockConn()
 		released = make(chan Conn, 1)
-		c        = &client{pool: pool, logger: testLogger}
+		c        = makeClient(pool, nil)
 	)
 
 	defer close(released)
@@ -59,7 +59,7 @@ func (s *ClientSuite) TestDoNoConnection(t sweet.T) {
 	var (
 		pool     = newMockPool()
 		released = make(chan Conn, 1)
-		c        = &client{pool: pool, logger: testLogger}
+		c        = makeClient(pool, nil)
 	)
 
 	defer close(released)
@@ -84,7 +84,7 @@ func (s *ClientSuite) TestDoError(t sweet.T) {
 		pool     = newMockPool()
 		conn     = newMockConn()
 		released = make(chan Conn, 1)
-		c        = &client{pool: pool, logger: testLogger}
+		c        = makeClient(pool, nil)
 	)
 
 	defer close(released)
@@ -114,7 +114,7 @@ func (s *ClientSuite) TestDoRetryableError(t sweet.T) {
 		clock       = glock.NewMockClock()
 		borrowCount = 0
 		released    = make(chan Conn, 2)
-		c           = &client{pool: pool, clock: clock, logger: testLogger}
+		c           = makeClient(pool, clock)
 	)
 
 	defer close(released)
@@ -130,7 +130,7 @@ func (s *ClientSuite) TestDoRetryableError(t sweet.T) {
 	}
 
 	conn1.do = func(command string, args ...interface{}) (interface{}, error) {
-		return nil, io.EOF
+		return nil, connErr{io.EOF}
 	}
 
 	conn2.do = func(command string, args ...interface{}) (interface{}, error) {
@@ -155,7 +155,7 @@ func (s *ClientSuite) TestTransaction(t sweet.T) {
 		conn     = newMockConn()
 		released = make(chan Conn, 1)
 		commands = make(chan Command, 5)
-		c        = &client{pool: pool, logger: testLogger}
+		c        = makeClient(pool, nil)
 	)
 
 	defer close(released)
@@ -201,7 +201,7 @@ func (s *ClientSuite) TestTransactionNoConnection(t sweet.T) {
 	var (
 		pool     = newMockPool()
 		released = make(chan Conn, 1)
-		c        = &client{pool: pool, logger: testLogger}
+		c        = makeClient(pool, nil)
 	)
 
 	defer close(released)
@@ -226,7 +226,7 @@ func (s *ClientSuite) TestTransactionError(t sweet.T) {
 		pool     = newMockPool()
 		conn     = newMockConn()
 		released = make(chan Conn, 1)
-		c        = &client{pool: pool, logger: testLogger}
+		c        = makeClient(pool, nil)
 	)
 
 	defer close(released)
@@ -265,7 +265,7 @@ func (s *ClientSuite) TestTransactionRetryableError(t sweet.T) {
 		borrowCount = 0
 		conn2       = newMockConn()
 		released    = make(chan Conn, 2)
-		c           = &client{pool: pool, clock: clock, logger: testLogger}
+		c           = makeClient(pool, clock)
 	)
 
 	defer close(released)
@@ -286,7 +286,7 @@ func (s *ClientSuite) TestTransactionRetryableError(t sweet.T) {
 
 	conn1.send = func(command string, args ...interface{}) error {
 		if borrowCount == 1 && command == "MULTI" {
-			return io.ErrUnexpectedEOF
+			return connErr{io.ErrUnexpectedEOF}
 		}
 
 		return nil
@@ -317,7 +317,7 @@ func (s *ClientSuite) TestTransactionRetryableErrorAfterMulti(t sweet.T) {
 		borrowCount = 0
 		conn2       = newMockConn()
 		released    = make(chan Conn, 2)
-		c           = &client{pool: pool, clock: clock, logger: testLogger}
+		c           = makeClient(pool, clock)
 	)
 
 	defer close(released)
@@ -338,7 +338,7 @@ func (s *ClientSuite) TestTransactionRetryableErrorAfterMulti(t sweet.T) {
 
 	conn1.send = func(command string, args ...interface{}) error {
 		if borrowCount == 1 && command == "bar" {
-			return io.ErrUnexpectedEOF
+			return connErr{io.ErrUnexpectedEOF}
 		}
 
 		return nil
@@ -359,6 +359,18 @@ func (s *ClientSuite) TestTransactionRetryableErrorAfterMulti(t sweet.T) {
 	Expect(err).To(BeNil())
 	Eventually(released).Should(Receive(BeNil()))
 	Eventually(released).Should(Receive(Equal(conn2)))
+}
+
+//
+// Helpers
+
+func makeClient(pool Pool, clock glock.Clock) *client {
+	return &client{
+		pool:    pool,
+		backoff: defaultBackoff,
+		clock:   clock,
+		logger:  testLogger,
+	}
 }
 
 //

@@ -10,20 +10,6 @@ import (
 )
 
 type (
-	// Conn abstracts a single, feature-minimal connection to Redis.
-	Conn interface {
-		// Close the connection to the remote Redis server.
-		Close() error
-
-		// Do performs a command on the remote Redis server and returns
-		// its result.
-		Do(command string, args ...interface{}) (interface{}, error)
-
-		// Send will publish command as part of a MULTI/EXEC sequence
-		// to the remote Redis server.
-		Send(command string, args ...interface{}) error
-	}
-
 	// Pool abstracts a fixed-size Redis connection pool.
 	Pool interface {
 		// Close will drain all available connections from the pool.
@@ -47,13 +33,6 @@ type (
 		Release(conn Conn)
 	}
 
-	// DialFunc creates a connection to Redis or returns an error.
-	DialFunc func() (Conn, error)
-
-	// BreakerFunc bridges the interface between the Call function of
-	// an overcurrent breaker and an overcurrent registry.
-	BreakerFunc func(overcurrent.BreakerFunc) error
-
 	pool struct {
 		dialer         DialFunc
 		capacity       int
@@ -64,6 +43,10 @@ type (
 		nilConnections chan Conn
 		mutex          sync.RWMutex
 	}
+
+	// BreakerFunc bridges the interface between the Call function of
+	// an overcurrent breaker and an overcurrent registry.
+	BreakerFunc func(overcurrent.BreakerFunc) error
 )
 
 func noopBreakerFunc(f overcurrent.BreakerFunc) error {

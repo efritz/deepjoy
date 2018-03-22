@@ -2,14 +2,12 @@ package deepjoy
 
 import (
 	"errors"
-	"io"
 	"time"
 
 	"github.com/bradhe/stopwatch"
 	"github.com/efritz/backoff"
 	"github.com/efritz/glock"
 	"github.com/efritz/overcurrent"
-	"github.com/garyburd/redigo/redis"
 )
 
 type (
@@ -37,6 +35,7 @@ type (
 	client struct {
 		pool          Pool
 		borrowTimeout *time.Duration
+		backoff       backoff.Backoff
 		clock         glock.Clock
 		logger        Logger
 	}
@@ -48,6 +47,7 @@ type (
 		readTimeout    time.Duration
 		writeTimeout   time.Duration
 		poolCapacity   int
+		backoff        backoff.Backoff
 		breakerFunc    BreakerFunc
 		clock          glock.Clock
 		borrowTimeout  *time.Duration
@@ -60,8 +60,11 @@ type (
 	ConfigFunc func(*clientConfig)
 )
 
-// ErrNoConnection is returned when the borrow timeout elapses.
-var ErrNoConnection = errors.New("no connection available in pool")
+var (
+	// ErrNoConnection is returned when the borrow timeout elapses.
+	ErrNoConnection = errors.New("no connection available in pool")
+	defaultBackoff  = backoff.NewLinearBackoff(time.Millisecond, time.Millisecond*250, time.Second*5)
+)
 
 // NewClient creates a new Client.
 func NewClient(addr string, configs ...ConfigFunc) Client {
@@ -73,6 +76,7 @@ func NewClient(addr string, configs ...ConfigFunc) Client {
 		readTimeout:    time.Second * 5,
 		poolCapacity:   10,
 		breakerFunc:    noopBreakerFunc,
+		backoff:        defaultBackoff,
 		clock:          glock.NewRealClock(),
 		borrowTimeout:  nil,
 		logger:         &defaultLogger{},
@@ -82,28 +86,17 @@ func NewClient(addr string, configs ...ConfigFunc) Client {
 		f(config)
 	}
 
-	dialer := func() (Conn, error) {
-		return redis.Dial(
-			"tcp",
-			addr,
-			redis.DialPassword(config.password),
-			redis.DialDatabase(config.database),
-			redis.DialConnectTimeout(config.connectTimeout),
-			redis.DialReadTimeout(config.readTimeout),
-			redis.DialWriteTimeout(config.writeTimeout),
-		)
-	}
-
 	return &client{
 		pool: NewPool(
-			dialer,
+			makeDialer(addr, config),
 			config.poolCapacity,
 			config.logger,
 			config.breakerFunc,
 			config.clock,
 		),
-		clock:  config.clock,
-		logger: config.logger,
+		backoff: config.backoff,
+		clock:   config.clock,
+		logger:  config.logger,
 	}
 }
 
@@ -139,6 +132,12 @@ func WithWriteTimeout(timeout time.Duration) ConfigFunc {
 // that can be in use at once (default is 10).
 func WithPoolCapacity(capacity int) ConfigFunc {
 	return func(c *clientConfig) { c.poolCapacity = capacity }
+}
+
+// WithRetryBackoff sets the circuit backoff prototype to use when
+// retrying a redis command after a non-protocol network error.
+func WithRetryBackoff(backoff backoff.Backoff) ConfigFunc {
+	return func(c *clientConfig) { c.backoff = backoff }
 }
 
 // WithBreaker sets the circuit breaker instance to use around new
@@ -196,21 +195,28 @@ func (c *client) Transaction(commands ...Command) (interface{}, error) {
 // Client Helper Functions
 
 func (c *client) withRetry(f retryableFunc) (interface{}, error) {
-	backoff := backoff.NewLinearBackoff(time.Millisecond, time.Millisecond*250, time.Second*5)
+	// Get a copy of the backoff
+	backoff := c.backoff.Clone()
 
 	for {
-		if result, err := f(); err == nil || !shouldRetry(err) {
+		result, err := f()
+
+		// Stop retry loop if we either succeeded or encountered a non-recoverable
+		// error (non-network error). We don't want to retry protocol or redis logic
+		// errors, as the command will likely behave the same way a second time.
+
+		if err == nil {
+			return result, nil
+		}
+
+		if _, ok := err.(connErr); !ok {
 			return result, err
 		}
 
-		// The TCP connection to the remote Redis server may have been
-		// reaped by a proxy (depending on your network topology). If
-		// we have an IO error, we can try again.
-		c.logger.Printf("Connection from pool was stale, retrying")
+		// Log error here so it's not silently dropped
+		c.logger.Printf("Received error from command, retrying (%s)", err.Error())
 
-		// Don't thrash the pool if this is an external problem (this
-		// should not be the case, but I'm not in the habit of hiding
-		// high-churn retry loops in libraries).
+		// Backoff, don't thrash the pool
 		<-c.clock.After(backoff.NextInterval())
 	}
 }
@@ -291,10 +297,4 @@ func (c *client) release(conn Conn, err error) {
 	}
 
 	c.pool.Release(conn)
-}
-
-// Given an error, determine if we should try to re-invoke the
-// command on another (possibly fresh) connection.
-func shouldRetry(err error) bool {
-	return err == io.EOF || err == io.ErrUnexpectedEOF
 }
