@@ -12,6 +12,83 @@ import (
 
 type ClientSuite struct{}
 
+func (s *ClientSuite) TestConfigureReadReplica(t sweet.T) {
+	client := NewClient(
+		"master",
+		WithLogger(testLogger),
+		WithReadReplicaAddr("replica"),
+		WithDialerFactory(func(addr string) DialFunc {
+			return func() (Conn, error) {
+				c := newMockConn()
+				c.do = func(command string, args ...interface{}) (interface{}, error) {
+					return addr, nil
+				}
+
+				return c, nil
+			}
+		}),
+	)
+
+	Expect(client.Do("ping")).To(Equal("master"))
+	Expect(client.ReadReplica().Do("ping")).To(Equal("replica"))
+}
+
+func (s *ClientSuite) TestReadReplica(t sweet.T) {
+	var (
+		pool1   = newMockPool()
+		pool2   = newMockPool()
+		conn1   = newMockConn()
+		conn2   = newMockConn()
+		called1 = 0
+		called2 = 0
+		client1 = makeClient(pool1, nil)
+		client2 = makeClient(pool2, nil)
+	)
+
+	client1.readReplicaClient = client2
+
+	pool1.borrow = func() (Conn, bool) { return conn1, true }
+	pool2.borrow = func() (Conn, bool) { return conn2, true }
+
+	conn1.do = func(command string, args ...interface{}) (interface{}, error) { called1++; return "", nil }
+	conn2.do = func(command string, args ...interface{}) (interface{}, error) { called2++; return "", nil }
+
+	client1.Do("foo")
+	Expect(called1).To(Equal(1))
+	Expect(called2).To(Equal(0))
+
+	replica := client1.ReadReplica()
+	replica.Do("foo")
+	Expect(replica).To(Equal(client2))
+	Expect(called1).To(Equal(1))
+	Expect(called2).To(Equal(1))
+}
+
+func (s *ClientSuite) TestCloseReadReplica(t sweet.T) {
+	var (
+		pool1   = newMockPool()
+		pool2   = newMockPool()
+		closed1 = false
+		closed2 = false
+		client1 = makeClient(pool1, nil)
+		client2 = makeClient(pool2, nil)
+	)
+
+	client1.readReplicaClient = client2
+
+	pool1.close = func() { closed1 = true }
+	pool2.close = func() { closed2 = true }
+
+	client1.Close()
+	Expect(closed1).To(BeTrue())
+	Expect(closed2).To(BeTrue())
+}
+
+func (s *ClientSuite) TestNilReadReplica(t sweet.T) {
+	c := makeClient(nil, nil)
+	Expect(c.ReadReplica()).To(Equal(c))
+}
+
 func (s *ClientSuite) TestClose(t sweet.T) {
 	var (
 		pool   = newMockPool()

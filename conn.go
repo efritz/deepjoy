@@ -17,33 +17,38 @@ type (
 		Send(command string, args ...interface{}) error
 	}
 
+	// DialFunc creates a connection to Redis or returns an error.
+	DialFunc func() (Conn, error)
+
+	// DialerFactory creates a DialFunc for the given address.
+	DialerFactory func(addr string) DialFunc
+
 	redigoShim struct {
 		conn redis.Conn
 	}
 
 	connErr struct{ error }
-
-	// DialFunc creates a connection to Redis or returns an error.
-	DialFunc func() (Conn, error)
 )
 
-func makeDialer(addr string, config *clientConfig) DialFunc {
-	return func() (Conn, error) {
-		conn, err := redis.Dial(
-			"tcp",
-			addr,
-			redis.DialPassword(config.password),
-			redis.DialDatabase(config.database),
-			redis.DialConnectTimeout(config.connectTimeout),
-			redis.DialReadTimeout(config.readTimeout),
-			redis.DialWriteTimeout(config.writeTimeout),
-		)
+func makeDefaultDialerFactory(config *clientConfig) DialerFactory {
+	return func(addr string) DialFunc {
+		return func() (Conn, error) {
+			conn, err := redis.Dial(
+				"tcp",
+				addr,
+				redis.DialPassword(config.password),
+				redis.DialDatabase(config.database),
+				redis.DialConnectTimeout(config.connectTimeout),
+				redis.DialReadTimeout(config.readTimeout),
+				redis.DialWriteTimeout(config.writeTimeout),
+			)
 
-		if err != nil {
-			return nil, err
+			if err != nil {
+				return nil, err
+			}
+
+			return &redigoShim{conn}, nil
 		}
-
-		return &redigoShim{conn}, nil
 	}
 }
 

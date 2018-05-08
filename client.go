@@ -16,6 +16,12 @@ type (
 		// Close will close all open connections to the remote Redis server.
 		Close()
 
+		// ReadReplica returns a host that points to the read replica. If no
+		// read replica is configured, this returns the current client. The
+		// client returned from this method does NOT need to be independently
+		// closed (closing the source client will also close replica clients).
+		ReadReplica() Client
+
 		// Do runs the command on the remote Redis server and returns its raw
 		// response.
 		Do(command string, args ...interface{}) (interface{}, error)
@@ -33,14 +39,17 @@ type (
 	}
 
 	client struct {
-		pool          Pool
-		borrowTimeout *time.Duration
-		backoff       backoff.Backoff
-		clock         glock.Clock
-		logger        Logger
+		readReplicaClient Client
+		pool              Pool
+		borrowTimeout     *time.Duration
+		backoff           backoff.Backoff
+		clock             glock.Clock
+		logger            Logger
 	}
 
 	clientConfig struct {
+		dialerFactory  DialerFactory
+		readAddr       string
 		password       string
 		database       int
 		connectTimeout time.Duration
@@ -69,8 +78,6 @@ var (
 // NewClient creates a new Client.
 func NewClient(addr string, configs ...ConfigFunc) Client {
 	config := &clientConfig{
-		password:       "",
-		database:       0,
 		connectTimeout: time.Second * 5,
 		writeTimeout:   time.Second * 5,
 		readTimeout:    time.Second * 5,
@@ -78,7 +85,6 @@ func NewClient(addr string, configs ...ConfigFunc) Client {
 		breakerFunc:    noopBreakerFunc,
 		backoff:        defaultBackoff,
 		clock:          glock.NewRealClock(),
-		borrowTimeout:  nil,
 		logger:         &defaultLogger{},
 	}
 
@@ -86,18 +92,46 @@ func NewClient(addr string, configs ...ConfigFunc) Client {
 		f(config)
 	}
 
-	return &client{
-		pool: NewPool(
-			makeDialer(addr, config),
-			config.poolCapacity,
-			config.logger,
-			config.breakerFunc,
-			config.clock,
-		),
-		backoff: config.backoff,
-		clock:   config.clock,
-		logger:  config.logger,
+	if config.dialerFactory == nil {
+		config.dialerFactory = makeDefaultDialerFactory(config)
 	}
+
+	return newClient(addr, config.readAddr, config)
+}
+
+func newClient(addr, replicaAddr string, config *clientConfig) Client {
+	if addr == "" {
+		return nil
+	}
+
+	pool := NewPool(
+		config.dialerFactory(addr),
+		config.poolCapacity,
+		config.logger,
+		config.breakerFunc,
+		config.clock,
+	)
+
+	return &client{
+		pool:              pool,
+		readReplicaClient: newClient(replicaAddr, "", config),
+		backoff:           config.backoff,
+		clock:             config.clock,
+		logger:            config.logger,
+	}
+}
+
+// WithDialerFactory sets the dialer factory to use to create the
+// connection pools. Each factory creates connections to a single
+// unique address.
+func WithDialerFactory(dialerFactory DialerFactory) ConfigFunc {
+	return func(c *clientConfig) { c.dialerFactory = dialerFactory }
+}
+
+// WithReadReplicaAddr sets the address of the client returned by
+// the client's ReadReplica() method.
+func WithReadReplicaAddr(addr string) ConfigFunc {
+	return func(c *clientConfig) { c.readAddr = addr }
 }
 
 // WithPassword sets the password (default is "").
@@ -179,7 +213,19 @@ func NewCommand(command string, args ...interface{}) Command {
 //
 // Client Implementation
 
+func (c *client) ReadReplica() Client {
+	if c.readReplicaClient != nil {
+		return c.readReplicaClient
+	}
+
+	return c
+}
+
 func (c *client) Close() {
+	if c.readReplicaClient != nil {
+		c.readReplicaClient.Close()
+	}
+
 	c.pool.Close()
 }
 
