@@ -311,9 +311,9 @@ func (c *client) timedBorrow() (Conn, bool) {
 	elapsed := stopwatch.Stop(start).Milliseconds()
 
 	if ok {
-		c.logger.Printf("Received connection after %vms", elapsed)
+		c.logger.Printf("Received connection after %v", elapsed)
 	} else {
-		c.logger.Printf("Could not borrow connection after %vms", elapsed)
+		c.logger.Printf("Could not borrow connection after %v", elapsed)
 	}
 
 	return conn, ok
