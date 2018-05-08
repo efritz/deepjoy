@@ -306,9 +306,10 @@ func (c *client) transaction(commands ...Command) (interface{}, error) {
 // Borrows and logs the time it took to return from blocking on the
 // pool's borrow method.
 func (c *client) timedBorrow() (Conn, bool) {
-	start := stopwatch.Start()
+	watch := stopwatch.Start()
 	conn, ok := c.borrow()
-	elapsed := stopwatch.Stop(start).Milliseconds()
+	watch.Stop()
+	elapsed := watch.Milliseconds()
 
 	if ok {
 		c.logger.Printf("Received connection after %v", elapsed)
