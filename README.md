@@ -5,7 +5,7 @@
 [![codecov.io](http://codecov.io/github/efritz/deepjoy/coverage.svg?branch=master)](http://codecov.io/github/efritz/deepjoy?branch=master)
 [![Go Report Card](https://goreportcard.com/badge/github.com/efritz/deepjoy)](https://goreportcard.com/report/github.com/efritz/deepjoy)
 
-A Go library that wraps [garyburd/redigo](https://github.com/garyburd/redigo)
+A Go library that wraps [gomodule/redigo](https://github.com/gomodule/redigo)
 in a pool. This library is named after [Y-40](http://www.y-40.com/en/).
 
 ## Example

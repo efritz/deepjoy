@@ -1,6 +1,6 @@
 package deepjoy
 
-import "github.com/garyburd/redigo/redis"
+import "github.com/gomodule/redigo/redis"
 
 type (
 	// Conn abstracts a single, feature-minimal connection to Redis.
