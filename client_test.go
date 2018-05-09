@@ -19,8 +19,8 @@ func (s *ClientSuite) TestConfigureReadReplica(t sweet.T) {
 		WithReadReplicaAddr("replica"),
 		WithDialerFactory(func(addr string) DialFunc {
 			return func() (Conn, error) {
-				c := newMockConn()
-				c.do = func(command string, args ...interface{}) (interface{}, error) {
+				c := NewMockConn()
+				c.DoFunc = func(command string, args ...interface{}) (interface{}, error) {
 					return addr, nil
 				}
 
@@ -35,10 +35,10 @@ func (s *ClientSuite) TestConfigureReadReplica(t sweet.T) {
 
 func (s *ClientSuite) TestReadReplica(t sweet.T) {
 	var (
-		pool1   = newMockPool()
-		pool2   = newMockPool()
-		conn1   = newMockConn()
-		conn2   = newMockConn()
+		pool1   = NewMockPool()
+		pool2   = NewMockPool()
+		conn1   = NewMockConn()
+		conn2   = NewMockConn()
 		called1 = 0
 		called2 = 0
 		client1 = makeClient(pool1, nil)
@@ -47,11 +47,11 @@ func (s *ClientSuite) TestReadReplica(t sweet.T) {
 
 	client1.readReplicaClient = client2
 
-	pool1.borrow = func() (Conn, bool) { return conn1, true }
-	pool2.borrow = func() (Conn, bool) { return conn2, true }
+	pool1.BorrowFunc = func() (Conn, bool) { return conn1, true }
+	pool2.BorrowFunc = func() (Conn, bool) { return conn2, true }
 
-	conn1.do = func(command string, args ...interface{}) (interface{}, error) { called1++; return "", nil }
-	conn2.do = func(command string, args ...interface{}) (interface{}, error) { called2++; return "", nil }
+	conn1.DoFunc = func(command string, args ...interface{}) (interface{}, error) { called1++; return "", nil }
+	conn2.DoFunc = func(command string, args ...interface{}) (interface{}, error) { called2++; return "", nil }
 
 	client1.Do("foo")
 	Expect(called1).To(Equal(1))
@@ -66,8 +66,8 @@ func (s *ClientSuite) TestReadReplica(t sweet.T) {
 
 func (s *ClientSuite) TestCloseReadReplica(t sweet.T) {
 	var (
-		pool1   = newMockPool()
-		pool2   = newMockPool()
+		pool1   = NewMockPool()
+		pool2   = NewMockPool()
 		closed1 = false
 		closed2 = false
 		client1 = makeClient(pool1, nil)
@@ -76,8 +76,8 @@ func (s *ClientSuite) TestCloseReadReplica(t sweet.T) {
 
 	client1.readReplicaClient = client2
 
-	pool1.close = func() { closed1 = true }
-	pool2.close = func() { closed2 = true }
+	pool1.CloseFunc = func() { closed1 = true }
+	pool2.CloseFunc = func() { closed2 = true }
 
 	client1.Close()
 	Expect(closed1).To(BeTrue())
@@ -91,12 +91,12 @@ func (s *ClientSuite) TestNilReadReplica(t sweet.T) {
 
 func (s *ClientSuite) TestClose(t sweet.T) {
 	var (
-		pool   = newMockPool()
+		pool   = NewMockPool()
 		called = false
 		c      = makeClient(pool, nil)
 	)
 
-	pool.close = func() {
+	pool.CloseFunc = func() {
 		called = true
 	}
 
@@ -106,23 +106,23 @@ func (s *ClientSuite) TestClose(t sweet.T) {
 
 func (s *ClientSuite) TestDo(t sweet.T) {
 	var (
-		pool     = newMockPool()
-		conn     = newMockConn()
+		pool     = NewMockPool()
+		conn     = NewMockConn()
 		released = make(chan Conn, 1)
 		c        = makeClient(pool, nil)
 	)
 
 	defer close(released)
 
-	pool.borrow = func() (Conn, bool) {
+	pool.BorrowFunc = func() (Conn, bool) {
 		return conn, true
 	}
 
-	pool.release = func(conn Conn) {
+	pool.ReleaseFunc = func(conn Conn) {
 		released <- conn
 	}
 
-	conn.do = func(command string, args ...interface{}) (interface{}, error) {
+	conn.DoFunc = func(command string, args ...interface{}) (interface{}, error) {
 		return []string{"BAR", "BAZ", "QUUX"}, nil
 	}
 
@@ -134,18 +134,18 @@ func (s *ClientSuite) TestDo(t sweet.T) {
 
 func (s *ClientSuite) TestDoNoConnection(t sweet.T) {
 	var (
-		pool     = newMockPool()
+		pool     = NewMockPool()
 		released = make(chan Conn, 1)
 		c        = makeClient(pool, nil)
 	)
 
 	defer close(released)
 
-	pool.borrow = func() (Conn, bool) {
+	pool.BorrowFunc = func() (Conn, bool) {
 		return nil, false
 	}
 
-	pool.release = func(conn Conn) {
+	pool.ReleaseFunc = func(conn Conn) {
 		released <- conn
 	}
 
@@ -158,23 +158,23 @@ func (s *ClientSuite) TestDoNoConnection(t sweet.T) {
 
 func (s *ClientSuite) TestDoError(t sweet.T) {
 	var (
-		pool     = newMockPool()
-		conn     = newMockConn()
+		pool     = NewMockPool()
+		conn     = NewMockConn()
 		released = make(chan Conn, 1)
 		c        = makeClient(pool, nil)
 	)
 
 	defer close(released)
 
-	pool.borrow = func() (Conn, bool) {
+	pool.BorrowFunc = func() (Conn, bool) {
 		return conn, true
 	}
 
-	pool.release = func(conn Conn) {
+	pool.ReleaseFunc = func(conn Conn) {
 		released <- conn
 	}
 
-	conn.do = func(command string, args ...interface{}) (interface{}, error) {
+	conn.DoFunc = func(command string, args ...interface{}) (interface{}, error) {
 		return nil, errors.New("utoh")
 	}
 
@@ -185,9 +185,9 @@ func (s *ClientSuite) TestDoError(t sweet.T) {
 
 func (s *ClientSuite) TestDoRetryableError(t sweet.T) {
 	var (
-		pool        = newMockPool()
-		conn1       = newMockConn()
-		conn2       = newMockConn()
+		pool        = NewMockPool()
+		conn1       = NewMockConn()
+		conn2       = NewMockConn()
 		clock       = glock.NewMockClock()
 		borrowCount = 0
 		released    = make(chan Conn, 2)
@@ -196,21 +196,21 @@ func (s *ClientSuite) TestDoRetryableError(t sweet.T) {
 
 	defer close(released)
 
-	pool.borrow = func() (Conn, bool) {
+	pool.BorrowFunc = func() (Conn, bool) {
 		c := []Conn{conn1, conn2}[borrowCount]
 		borrowCount++
 		return c, true
 	}
 
-	pool.release = func(conn Conn) {
+	pool.ReleaseFunc = func(conn Conn) {
 		released <- conn
 	}
 
-	conn1.do = func(command string, args ...interface{}) (interface{}, error) {
+	conn1.DoFunc = func(command string, args ...interface{}) (interface{}, error) {
 		return nil, connErr{io.EOF}
 	}
 
-	conn2.do = func(command string, args ...interface{}) (interface{}, error) {
+	conn2.DoFunc = func(command string, args ...interface{}) (interface{}, error) {
 		return []string{"BAR", "BAZ", "QUUX"}, nil
 	}
 
@@ -228,8 +228,8 @@ func (s *ClientSuite) TestDoRetryableError(t sweet.T) {
 
 func (s *ClientSuite) TestTransaction(t sweet.T) {
 	var (
-		pool     = newMockPool()
-		conn     = newMockConn()
+		pool     = NewMockPool()
+		conn     = NewMockConn()
 		released = make(chan Conn, 1)
 		commands = make(chan Command, 5)
 		c        = makeClient(pool, nil)
@@ -238,20 +238,20 @@ func (s *ClientSuite) TestTransaction(t sweet.T) {
 	defer close(released)
 	defer close(commands)
 
-	pool.borrow = func() (Conn, bool) {
+	pool.BorrowFunc = func() (Conn, bool) {
 		return conn, true
 	}
 
-	pool.release = func(conn Conn) {
+	pool.ReleaseFunc = func(conn Conn) {
 		released <- conn
 	}
 
-	conn.do = func(command string, args ...interface{}) (interface{}, error) {
+	conn.DoFunc = func(command string, args ...interface{}) (interface{}, error) {
 		commands <- NewCommand(command, args...)
 		return []int{1, 2, 3, 4}, nil
 	}
 
-	conn.send = func(command string, args ...interface{}) error {
+	conn.SendFunc = func(command string, args ...interface{}) error {
 		commands <- NewCommand(command, args...)
 		return nil
 	}
@@ -276,18 +276,18 @@ func (s *ClientSuite) TestTransaction(t sweet.T) {
 
 func (s *ClientSuite) TestTransactionNoConnection(t sweet.T) {
 	var (
-		pool     = newMockPool()
+		pool     = NewMockPool()
 		released = make(chan Conn, 1)
 		c        = makeClient(pool, nil)
 	)
 
 	defer close(released)
 
-	pool.borrow = func() (Conn, bool) {
+	pool.BorrowFunc = func() (Conn, bool) {
 		return nil, false
 	}
 
-	pool.release = func(conn Conn) {
+	pool.ReleaseFunc = func(conn Conn) {
 		released <- conn
 	}
 
@@ -300,23 +300,23 @@ func (s *ClientSuite) TestTransactionNoConnection(t sweet.T) {
 
 func (s *ClientSuite) TestTransactionError(t sweet.T) {
 	var (
-		pool     = newMockPool()
-		conn     = newMockConn()
+		pool     = NewMockPool()
+		conn     = NewMockConn()
 		released = make(chan Conn, 1)
 		c        = makeClient(pool, nil)
 	)
 
 	defer close(released)
 
-	pool.borrow = func() (Conn, bool) {
+	pool.BorrowFunc = func() (Conn, bool) {
 		return conn, true
 	}
 
-	pool.release = func(conn Conn) {
+	pool.ReleaseFunc = func(conn Conn) {
 		released <- conn
 	}
 
-	conn.send = func(command string, args ...interface{}) error {
+	conn.SendFunc = func(command string, args ...interface{}) error {
 		if command == "bar" {
 			return errors.New("utoh")
 		}
@@ -336,32 +336,32 @@ func (s *ClientSuite) TestTransactionError(t sweet.T) {
 
 func (s *ClientSuite) TestTransactionRetryableError(t sweet.T) {
 	var (
-		pool        = newMockPool()
-		conn1       = newMockConn()
+		pool        = NewMockPool()
+		conn1       = NewMockConn()
 		clock       = glock.NewMockClock()
 		borrowCount = 0
-		conn2       = newMockConn()
+		conn2       = NewMockConn()
 		released    = make(chan Conn, 2)
 		c           = makeClient(pool, clock)
 	)
 
 	defer close(released)
 
-	pool.borrow = func() (Conn, bool) {
+	pool.BorrowFunc = func() (Conn, bool) {
 		c := []Conn{conn1, conn2}[borrowCount]
 		borrowCount++
 		return c, true
 	}
 
-	pool.release = func(conn Conn) {
+	pool.ReleaseFunc = func(conn Conn) {
 		released <- conn
 	}
 
-	conn2.do = func(command string, args ...interface{}) (interface{}, error) {
+	conn2.DoFunc = func(command string, args ...interface{}) (interface{}, error) {
 		return []int{1, 2, 3, 4}, nil
 	}
 
-	conn1.send = func(command string, args ...interface{}) error {
+	conn1.SendFunc = func(command string, args ...interface{}) error {
 		if borrowCount == 1 && command == "MULTI" {
 			return connErr{io.ErrUnexpectedEOF}
 		}
@@ -388,32 +388,32 @@ func (s *ClientSuite) TestTransactionRetryableError(t sweet.T) {
 
 func (s *ClientSuite) TestTransactionRetryableErrorAfterMulti(t sweet.T) {
 	var (
-		pool        = newMockPool()
-		conn1       = newMockConn()
+		pool        = NewMockPool()
+		conn1       = NewMockConn()
 		clock       = glock.NewMockClock()
 		borrowCount = 0
-		conn2       = newMockConn()
+		conn2       = NewMockConn()
 		released    = make(chan Conn, 2)
 		c           = makeClient(pool, clock)
 	)
 
 	defer close(released)
 
-	pool.borrow = func() (Conn, bool) {
+	pool.BorrowFunc = func() (Conn, bool) {
 		c := []Conn{conn1, conn2}[borrowCount]
 		borrowCount++
 		return c, true
 	}
 
-	pool.release = func(conn Conn) {
+	pool.ReleaseFunc = func(conn Conn) {
 		released <- conn
 	}
 
-	conn2.do = func(command string, args ...interface{}) (interface{}, error) {
+	conn2.DoFunc = func(command string, args ...interface{}) (interface{}, error) {
 		return []int{1, 2, 3, 4}, nil
 	}
 
-	conn1.send = func(command string, args ...interface{}) error {
+	conn1.SendFunc = func(command string, args ...interface{}) error {
 		if borrowCount == 1 && command == "bar" {
 			return connErr{io.ErrUnexpectedEOF}
 		}
@@ -449,27 +449,3 @@ func makeClient(pool Pool, clock glock.Clock) *client {
 		logger:  testLogger,
 	}
 }
-
-//
-// Mock Pool
-
-type mockPool struct {
-	close         func()
-	borrow        func() (Conn, bool)
-	borrowTimeout func(timeout time.Duration) (Conn, bool)
-	release       func(conn Conn)
-}
-
-func newMockPool() *mockPool {
-	return &mockPool{
-		close:         func() {},
-		borrow:        func() (Conn, bool) { return nil, false },
-		borrowTimeout: func(timeout time.Duration) (Conn, bool) { return nil, false },
-		release:       func(conn Conn) {},
-	}
-}
-
-func (p *mockPool) Close()                                           { p.close() }
-func (p *mockPool) Borrow() (Conn, bool)                             { return p.borrow() }
-func (p *mockPool) BorrowTimeout(timeout time.Duration) (Conn, bool) { return p.borrowTimeout(timeout) }
-func (p *mockPool) Release(conn Conn)                                { p.release(conn) }

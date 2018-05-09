@@ -1,5 +1,7 @@
 package deepjoy
 
+//go:generate go-mockgen github.com/efritz/deepjoy -f -o mock_test.go -i Conn -i Pool
+
 import (
 	"testing"
 

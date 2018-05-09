@@ -42,7 +42,7 @@ func (s *PoolSuite) TestNewPoolAtCapacity(t sweet.T) {
 
 func (s *PoolSuite) TestPoolDialOnNilConnection(t sweet.T) {
 	var (
-		conn = newMockConn()
+		conn = NewMockConn()
 		dial = func() (Conn, error) { return conn, nil }
 		pool = NewPool(
 			dial,
@@ -61,7 +61,7 @@ func (s *PoolSuite) TestPoolDialOnNilConnection(t sweet.T) {
 func (s *PoolSuite) TestPoolDialOnNilConnectionAfterRelease(t sweet.T) {
 	var (
 		dials = 0
-		conn  = newMockConn()
+		conn  = NewMockConn()
 		dial  = func() (Conn, error) { dials++; return conn, nil }
 		pool  = NewPool(
 			dial,
@@ -97,7 +97,7 @@ func (s *PoolSuite) TestPoolDialOnNilConnectionAfterRelease(t sweet.T) {
 func (s *PoolSuite) TestClose(t sweet.T) {
 	var (
 		closeCount = 0
-		conn       = newMockConn()
+		conn       = NewMockConn()
 		pool       = NewPool(
 			testDial,
 			20,
@@ -107,7 +107,7 @@ func (s *PoolSuite) TestClose(t sweet.T) {
 		)
 	)
 
-	conn.close = func() error {
+	conn.CloseFunc = func() error {
 		closeCount++
 		return nil
 	}
@@ -133,7 +133,7 @@ func (s *PoolSuite) TestCloseBlocks(t sweet.T) {
 	var (
 		sync  = make(chan struct{})
 		block = make(chan struct{})
-		conn  = newMockConn()
+		conn  = NewMockConn()
 		pool  = NewPool(
 			testDial,
 			20,
@@ -143,7 +143,7 @@ func (s *PoolSuite) TestCloseBlocks(t sweet.T) {
 		)
 	)
 
-	conn.close = func() error {
+	conn.CloseFunc = func() error {
 		<-block
 		return nil
 	}
@@ -169,7 +169,7 @@ func (s *PoolSuite) TestCloseBlocks(t sweet.T) {
 func (s *PoolSuite) TestBorrowFavorsNonNil(t sweet.T) {
 	var (
 		dials = 0
-		conn  = newMockConn()
+		conn  = NewMockConn()
 		pool  = NewPool(
 			func() (Conn, error) { dials++; return conn, nil },
 			20,
@@ -285,35 +285,6 @@ func (s *PoolSuite) TestCircuitBreaker(t sweet.T) {
 	}
 }
 
-//
-// Mock Connection
-
 func testDial() (Conn, error) {
-	return &mockConn{}, nil
-}
-
-type mockConn struct {
-	close func() error
-	do    func(command string, args ...interface{}) (interface{}, error)
-	send  func(command string, args ...interface{}) error
-}
-
-func newMockConn() *mockConn {
-	return &mockConn{
-		close: func() error { return nil },
-		do:    func(command string, args ...interface{}) (interface{}, error) { return nil, nil },
-		send:  func(command string, args ...interface{}) error { return nil },
-	}
-}
-
-func (c *mockConn) Close() error {
-	return c.close()
-}
-
-func (c *mockConn) Do(command string, args ...interface{}) (interface{}, error) {
-	return c.do(command, args...)
-}
-
-func (c *mockConn) Send(command string, args ...interface{}) error {
-	return c.send(command, args...)
+	return NewMockConn(), nil
 }
