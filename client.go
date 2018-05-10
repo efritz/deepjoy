@@ -16,10 +16,11 @@ type (
 		// Close will close all open connections to the remote Redis server.
 		Close()
 
-		// ReadReplica returns a host that points to the read replica. If no
-		// read replica is configured, this returns the current client. The
-		// client returned from this method does NOT need to be independently
-		// closed (closing the source client will also close replica clients).
+		// ReadReplica returns a host that points to the set of configured
+		// read replicas. If no read replicas are configured, this returns
+		// the current client. The client returned from this method does NOT
+		// need to be independently closed (closing the source client will
+		// also close replica clients).
 		ReadReplica() Client
 
 		// Do runs the command on the remote Redis server and returns its raw
@@ -49,7 +50,7 @@ type (
 
 	clientConfig struct {
 		dialerFactory  DialerFactory
-		readAddr       string
+		readAddrs      []string
 		password       string
 		database       int
 		connectTimeout time.Duration
@@ -96,16 +97,16 @@ func NewClient(addr string, configs ...ConfigFunc) Client {
 		config.dialerFactory = makeDefaultDialerFactory(config)
 	}
 
-	return newClient(addr, config.readAddr, config)
+	return newClient([]string{addr}, config.readAddrs, config)
 }
 
-func newClient(addr, replicaAddr string, config *clientConfig) Client {
-	if addr == "" {
+func newClient(addrs, replicaAddrs []string, config *clientConfig) Client {
+	if addrs == nil {
 		return nil
 	}
 
 	pool := NewPool(
-		config.dialerFactory(addr),
+		config.dialerFactory(addrs),
 		config.poolCapacity,
 		config.logger,
 		config.breakerFunc,
@@ -114,7 +115,7 @@ func newClient(addr, replicaAddr string, config *clientConfig) Client {
 
 	return &client{
 		pool:              pool,
-		readReplicaClient: newClient(replicaAddr, "", config),
+		readReplicaClient: newClient(replicaAddrs, nil, config),
 		backoff:           config.backoff,
 		clock:             config.clock,
 		logger:            config.logger,
@@ -128,10 +129,10 @@ func WithDialerFactory(dialerFactory DialerFactory) ConfigFunc {
 	return func(c *clientConfig) { c.dialerFactory = dialerFactory }
 }
 
-// WithReadReplicaAddr sets the address of the client returned by
-// the client's ReadReplica() method.
-func WithReadReplicaAddr(addr string) ConfigFunc {
-	return func(c *clientConfig) { c.readAddr = addr }
+// WithReadReplicaAddrs sets the addresses of the client returned
+// by client's the ReadReplica() method.
+func WithReadReplicaAddrs(addrs ...string) ConfigFunc {
+	return func(c *clientConfig) { c.readAddrs = addrs }
 }
 
 // WithPassword sets the password (default is "").

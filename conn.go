@@ -21,7 +21,7 @@ type (
 	DialFunc func() (Conn, error)
 
 	// DialerFactory creates a DialFunc for the given address.
-	DialerFactory func(addr string) DialFunc
+	DialerFactory func(addrs []string) DialFunc
 
 	redigoShim struct {
 		conn redis.Conn
@@ -31,8 +31,12 @@ type (
 )
 
 func makeDefaultDialerFactory(config *clientConfig) DialerFactory {
-	return func(addr string) DialFunc {
+	return func(addrs []string) DialFunc {
 		return func() (Conn, error) {
+			addr := chooseRandom(addrs)
+
+			config.logger.Printf("Attempting to dial redis at %s", addr)
+
 			conn, err := redis.Dial(
 				"tcp",
 				addr,

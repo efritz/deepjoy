@@ -16,12 +16,12 @@ func (s *ClientSuite) TestConfigureReadReplica(t sweet.T) {
 	client := NewClient(
 		"master",
 		WithLogger(testLogger),
-		WithReadReplicaAddr("replica"),
-		WithDialerFactory(func(addr string) DialFunc {
+		WithReadReplicaAddrs("replica"),
+		WithDialerFactory(func(addrs []string) DialFunc {
 			return func() (Conn, error) {
 				c := NewMockConn()
 				c.DoFunc = func(command string, args ...interface{}) (interface{}, error) {
-					return addr, nil
+					return addrs[0], nil
 				}
 
 				return c, nil
