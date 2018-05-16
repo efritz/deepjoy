@@ -9,16 +9,21 @@ type (
 		Printf(format string, args ...interface{})
 	}
 
-	defaultLogger struct{}
-	nilLogger     struct{}
+	printLogger struct{}
+	nilLogger   struct{}
 )
+
+// NewPrintLogger creates a logger that prints to stdout.
+func NewPrintLogger() Logger {
+	return &printLogger{}
+}
 
 // NewNilLogger creates a silent logger.
 func NewNilLogger() Logger {
 	return &nilLogger{}
 }
 
-func (l *defaultLogger) Printf(format string, args ...interface{}) {
+func (l *printLogger) Printf(format string, args ...interface{}) {
 	log.Printf(format, args...)
 }
 

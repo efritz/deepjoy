@@ -86,7 +86,7 @@ func NewClient(addr string, configs ...ConfigFunc) Client {
 		breakerFunc:    noopBreakerFunc,
 		backoff:        defaultBackoff,
 		clock:          glock.NewRealClock(),
-		logger:         &defaultLogger{},
+		logger:         &nilLogger{},
 	}
 
 	for _, f := range configs {
