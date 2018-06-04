@@ -2,8 +2,8 @@
 
 [![GoDoc](https://godoc.org/github.com/efritz/deepjoy?status.svg)](https://godoc.org/github.com/efritz/deepjoy)
 [![Build Status](https://secure.travis-ci.org/efritz/deepjoy.png)](http://travis-ci.org/efritz/deepjoy)
-[![codecov.io](http://codecov.io/github/efritz/deepjoy/coverage.svg?branch=master)](http://codecov.io/github/efritz/deepjoy?branch=master)
-[![Go Report Card](https://goreportcard.com/badge/github.com/efritz/deepjoy)](https://goreportcard.com/report/github.com/efritz/deepjoy)
+[![Maintainability](https://api.codeclimate.com/v1/badges/087a251bad276ff18318/maintainability)](https://codeclimate.com/github/efritz/deepjoy/maintainability)
+[![Test Coverage](https://api.codeclimate.com/v1/badges/087a251bad276ff18318/test_coverage)](https://codeclimate.com/github/efritz/deepjoy/test_coverage)
 
 A Go library that wraps [gomodule/redigo](https://github.com/gomodule/redigo)
 in a pool. This library is named after [Y-40](http://www.y-40.com/en/).
