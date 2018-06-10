@@ -231,7 +231,7 @@ func (s *ClientSuite) TestTransaction(t sweet.T) {
 		pool     = NewMockPool()
 		conn     = NewMockConn()
 		released = make(chan Conn, 1)
-		commands = make(chan Command, 5)
+		commands = make(chan commandPair, 5)
 		c        = makeClient(pool, nil)
 	)
 
@@ -247,30 +247,30 @@ func (s *ClientSuite) TestTransaction(t sweet.T) {
 	}
 
 	conn.DoFunc = func(command string, args ...interface{}) (interface{}, error) {
-		commands <- NewCommand(command, args...)
+		commands <- commandPair{command, args}
 		return []int{1, 2, 3, 4}, nil
 	}
 
 	conn.SendFunc = func(command string, args ...interface{}) error {
-		commands <- NewCommand(command, args...)
+		commands <- commandPair{command, args}
 		return nil
 	}
 
-	result, err := c.Transaction(
-		NewCommand("foo", 1, 2, 3),
-		NewCommand("bar", 2, 3, 4),
-		NewCommand("baz", 3, 4, 5),
-	)
+	pipeline := c.Pipeline()
+	pipeline.Add("foo", 1, 2, 3)
+	pipeline.Add("bar", 2, 3, 4)
+	pipeline.Add("baz", 3, 4, 5)
 
-	Expect(result).To(Equal([]int{1, 2, 3, 4}))
+	result, err := pipeline.Run()
 	Expect(err).To(BeNil())
-	Eventually(released).Should(Receive(Equal(conn)))
+	Expect(result).To(Equal([]int{1, 2, 3, 4}))
 
-	Eventually(commands).Should(Receive(Equal(NewCommand("MULTI"))))
-	Eventually(commands).Should(Receive(Equal(NewCommand("foo", 1, 2, 3))))
-	Eventually(commands).Should(Receive(Equal(NewCommand("bar", 2, 3, 4))))
-	Eventually(commands).Should(Receive(Equal(NewCommand("baz", 3, 4, 5))))
-	Eventually(commands).Should(Receive(Equal(NewCommand("EXEC"))))
+	Eventually(released).Should(Receive(Equal(conn)))
+	Eventually(commands).Should(Receive(Equal(commandPair{"MULTI", nil})))
+	Eventually(commands).Should(Receive(Equal(commandPair{"foo", []interface{}{1, 2, 3}})))
+	Eventually(commands).Should(Receive(Equal(commandPair{"bar", []interface{}{2, 3, 4}})))
+	Eventually(commands).Should(Receive(Equal(commandPair{"baz", []interface{}{3, 4, 5}})))
+	Eventually(commands).Should(Receive(Equal(commandPair{"EXEC", nil})))
 	Consistently(commands).ShouldNot(Receive())
 }
 
@@ -291,7 +291,7 @@ func (s *ClientSuite) TestTransactionNoConnection(t sweet.T) {
 		released <- conn
 	}
 
-	_, err := c.Transaction()
+	_, err := c.Pipeline().Run()
 	Expect(err).To(Equal(ErrNoConnection))
 
 	// Nothing to release
@@ -324,11 +324,11 @@ func (s *ClientSuite) TestTransactionError(t sweet.T) {
 		return nil
 	}
 
-	_, err := c.Transaction(
-		NewCommand("foo", 1, 2, 3),
-		NewCommand("bar", 2, 3, 4),
-		NewCommand("baz", 3, 4, 5),
-	)
+	pipeline := c.Pipeline()
+	pipeline.Add("foo", 1, 2, 3)
+	pipeline.Add("bar", 2, 3, 4)
+	pipeline.Add("baz", 3, 4, 5)
+	_, err := pipeline.Run()
 
 	Expect(err).To(MatchError("utoh"))
 	Eventually(released).Should(Receive(BeNil()))
@@ -374,14 +374,14 @@ func (s *ClientSuite) TestTransactionRetryableError(t sweet.T) {
 		clock.BlockingAdvance(time.Second)
 	}()
 
-	result, err := c.Transaction(
-		NewCommand("foo", 1, 2, 3),
-		NewCommand("bar", 2, 3, 4),
-		NewCommand("baz", 3, 4, 5),
-	)
+	pipeline := c.Pipeline()
+	pipeline.Add("foo", 1, 2, 3)
+	pipeline.Add("bar", 2, 3, 4)
+	pipeline.Add("baz", 3, 4, 5)
+	result, err := pipeline.Run()
 
-	Expect(result).To(Equal([]int{1, 2, 3, 4}))
 	Expect(err).To(BeNil())
+	Expect(result).To(Equal([]int{1, 2, 3, 4}))
 	Eventually(released).Should(Receive(BeNil()))
 	Eventually(released).Should(Receive(Equal(conn2)))
 }
@@ -426,14 +426,15 @@ func (s *ClientSuite) TestTransactionRetryableErrorAfterMulti(t sweet.T) {
 		clock.BlockingAdvance(time.Second)
 	}()
 
-	result, err := c.Transaction(
-		NewCommand("foo", 1, 2, 3),
-		NewCommand("bar", 2, 3, 4),
-		NewCommand("baz", 3, 4, 5),
-	)
+	pipeline := c.Pipeline()
+	pipeline.Add("foo", 1, 2, 3)
+	pipeline.Add("bar", 2, 3, 4)
+	pipeline.Add("baz", 3, 4, 5)
 
-	Expect(result).To(Equal([]int{1, 2, 3, 4}))
+	result, err := pipeline.Run()
 	Expect(err).To(BeNil())
+	Expect(result).To(Equal([]int{1, 2, 3, 4}))
+
 	Eventually(released).Should(Receive(BeNil()))
 	Eventually(released).Should(Receive(Equal(conn2)))
 }

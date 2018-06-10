@@ -7,7 +7,6 @@ import (
 	"github.com/bradhe/stopwatch"
 	"github.com/efritz/backoff"
 	"github.com/efritz/glock"
-	"github.com/efritz/overcurrent"
 )
 
 type (
@@ -27,16 +26,15 @@ type (
 		// response.
 		Do(command string, args ...interface{}) (interface{}, error)
 
-		// Transaction runs several commands in a single connection. MULTI/EXEC
-		// commands are added implicitly by the client.
-		Transaction(commands ...Command) (interface{}, error)
-	}
-
-	// Command is a struct that bundles the command and the command arguments
-	// together to be used in a transaction.
-	Command struct {
-		Command string
-		Args    []interface{}
+		// Pipeline returns a builder object to which commands can be attached.
+		// All commands in the pipeline are sent to the remote server in a
+		// single request and all results will be returned in a single response.
+		// The MULTI/EXEC commands are added implicitly by the client. A pipeline
+		// does NOT guarantee atomicity (it is not a transaction in the ACID
+		// sense). If you require multiple command sto be run atomically, bundle
+		// them in a Lua script and run it on the remote server with the EVAL
+		// command.
+		Pipeline() Pipeline
 	}
 
 	client struct {
@@ -65,15 +63,13 @@ type (
 	}
 
 	retryableFunc func() (interface{}, error)
-
-	// ConfigFunc is a function used to initialize a new client.
-	ConfigFunc func(*clientConfig)
 )
 
 var (
 	// ErrNoConnection is returned when the borrow timeout elapses.
 	ErrNoConnection = errors.New("no connection available in pool")
-	defaultBackoff  = backoff.NewLinearBackoff(time.Millisecond, time.Millisecond*250, time.Second*5)
+
+	defaultBackoff = backoff.NewLinearBackoff(time.Millisecond, time.Millisecond*250, time.Second*5)
 )
 
 // NewClient creates a new Client.
@@ -122,95 +118,6 @@ func newClient(addrs, replicaAddrs []string, config *clientConfig) Client {
 	}
 }
 
-// WithDialerFactory sets the dialer factory to use to create the
-// connection pools. Each factory creates connections to a single
-// unique address.
-func WithDialerFactory(dialerFactory DialerFactory) ConfigFunc {
-	return func(c *clientConfig) { c.dialerFactory = dialerFactory }
-}
-
-// WithReadReplicaAddrs sets the addresses of the client returned
-// by client's the ReadReplica() method.
-func WithReadReplicaAddrs(addrs ...string) ConfigFunc {
-	return func(c *clientConfig) { c.readAddrs = addrs }
-}
-
-// WithPassword sets the password (default is "").
-func WithPassword(password string) ConfigFunc {
-	return func(c *clientConfig) { c.password = password }
-}
-
-// WithDatabase sets the database index (default is 0).
-func WithDatabase(database int) ConfigFunc {
-	return func(c *clientConfig) { c.database = database }
-}
-
-// WithConnectTimeout sets the connect timeout for new connections
-// (default is 5 seconds).
-func WithConnectTimeout(timeout time.Duration) ConfigFunc {
-	return func(c *clientConfig) { c.connectTimeout = timeout }
-}
-
-// WithReadTimeout sets the read timeout for all connections in the
-// pool (default is 5 seconds).
-func WithReadTimeout(timeout time.Duration) ConfigFunc {
-	return func(c *clientConfig) { c.readTimeout = timeout }
-}
-
-// WithWriteTimeout sets the write timeout for all connections in the
-// pool (default is 5 seconds).
-func WithWriteTimeout(timeout time.Duration) ConfigFunc {
-	return func(c *clientConfig) { c.writeTimeout = timeout }
-}
-
-// WithPoolCapacity sets the maximum number of concurrent connections
-// that can be in use at once (default is 10).
-func WithPoolCapacity(capacity int) ConfigFunc {
-	return func(c *clientConfig) { c.poolCapacity = capacity }
-}
-
-// WithRetryBackoff sets the circuit backoff prototype to use when
-// retrying a redis command after a non-protocol network error.
-func WithRetryBackoff(backoff backoff.Backoff) ConfigFunc {
-	return func(c *clientConfig) { c.backoff = backoff }
-}
-
-// WithBreaker sets the circuit breaker instance to use around new
-// connections. The default uses a no-op circuit breaker.
-func WithBreaker(breaker overcurrent.CircuitBreaker) ConfigFunc {
-	return func(c *clientConfig) { c.breakerFunc = breaker.Call }
-}
-
-// WithBreakerRegistry sets the overcurrent registry to use and the
-// name of the circuit breaker config tu use around new connections.
-// The default uses a no-op circuit breaker.
-func WithBreakerRegistry(registry overcurrent.Registry, name string) ConfigFunc {
-	return func(c *clientConfig) {
-		c.breakerFunc = func(f overcurrent.BreakerFunc) error {
-			return registry.Call(name, f, nil)
-		}
-	}
-}
-
-// WithBorrowTimeout sets the maximum time
-func WithBorrowTimeout(timeout time.Duration) ConfigFunc {
-	return func(c *clientConfig) { c.borrowTimeout = &timeout }
-}
-
-// WithLogger sets the logger instance (the default will use Go's
-// builtin logging library).
-func WithLogger(logger Logger) ConfigFunc {
-	return func(c *clientConfig) { c.logger = logger }
-}
-
-// NewCommand creates a Command instance.
-func NewCommand(command string, args ...interface{}) Command {
-	return Command{
-		Command: command,
-		Args:    args,
-	}
-}
-
 //
 // Client Implementation
 
@@ -234,8 +141,8 @@ func (c *client) Do(command string, args ...interface{}) (interface{}, error) {
 	return c.withRetry(func() (interface{}, error) { return c.do(command, args) })
 }
 
-func (c *client) Transaction(commands ...Command) (interface{}, error) {
-	return c.withRetry(func() (interface{}, error) { return c.transaction(commands...) })
+func (c *client) Pipeline() Pipeline {
+	return newPipeline(c)
 }
 
 //
@@ -280,8 +187,15 @@ func (c *client) do(command string, args []interface{}) (interface{}, error) {
 	return result, err
 }
 
-// Invoke a series of commands and release the connection back to the pool.
-func (c *client) transaction(commands ...Command) (interface{}, error) {
+// Invoke a series of commands wrapped in MULTI and EXEC commands
+// and release the connection back to the pool. Will retry on error.
+func (c *client) pipeline(commands []commandPair) (interface{}, error) {
+	return c.withRetry(func() (interface{}, error) { return c.doPipeline(commands) })
+}
+
+// Invoke a series of commands wrapped in MULTI and EXEC commands
+// and release the connection back to the pool.
+func (c *client) doPipeline(commands []commandPair) (interface{}, error) {
 	conn, ok := c.timedBorrow()
 	if !ok {
 		return nil, ErrNoConnection
@@ -293,7 +207,7 @@ func (c *client) transaction(commands ...Command) (interface{}, error) {
 	}
 
 	for _, command := range commands {
-		if err := conn.Send(command.Command, command.Args...); err != nil {
+		if err := conn.Send(command.command, command.args...); err != nil {
 			c.release(conn, err)
 			return nil, err
 		}
