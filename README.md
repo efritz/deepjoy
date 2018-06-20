@@ -16,7 +16,7 @@ values have sane (hopefully) defaults.
 
 ```go
 client := NewClient(
-    "http://dart.it.corp:6379",
+    "dart.it.corp:6379",
     WithPassword("hunter2"),
     WithDatabase(3),
     WithConnectTimeout(time.Second * 5),
