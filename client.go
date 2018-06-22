@@ -31,7 +31,7 @@ type (
 		// single request and all results will be returned in a single response.
 		// The MULTI/EXEC commands are added implicitly by the client. A pipeline
 		// does NOT guarantee atomicity (it is not a transaction in the ACID
-		// sense). If you require multiple command sto be run atomically, bundle
+		// sense). If you require multiple commands to be run atomically, bundle
 		// them in a Lua script and run it on the remote server with the EVAL
 		// command.
 		Pipeline() Pipeline
