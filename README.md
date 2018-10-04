@@ -60,16 +60,21 @@ if err != nil {
 // parse interface{} result
 ```
 
-In order to run multiple commands in a single round trip, you can use a transaction.
-This method takes a set of `Command` instances, which are a simple structure that wraps
-the same command and variadic list of args as shown above.
+In order to run multiple commands in a single round trip, you can use a pipeline.
+Commands added to the pipeline do not have an effect on the remote server - no
+network communication is done until the pipeline is run. Piplines are NOT atomic
+or transactional - it is possible for command in the pipeline to fail and for
+side-effects from earlier commands to persist. THe result from a pipeline is a
+slice of interfaces - the result of each command is returned in the order that it
+was added to the pipeline.
 
 ```go
-result, err := client.Transaction(
-    NewCommand("set", "mykey", "myavlue"),
-    NewCommand("expire", "mykey", 120),
-)
+pipeline := client.Pipeline()
+pipeline.Add("GET", "foo")
+pipeline.Add("GET", "bar")
+pipeline.Add("GET", "baz")
 
+results, err := pipeline.Run()
 if err != nil {
     // handle error
 }

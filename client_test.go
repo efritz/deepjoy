@@ -226,7 +226,7 @@ func (s *ClientSuite) TestDoRetryableError(t sweet.T) {
 	Expect(released).To(Receive(Equal(conn2)))
 }
 
-func (s *ClientSuite) TestTransaction(t sweet.T) {
+func (s *ClientSuite) TestPipeline(t sweet.T) {
 	var (
 		pool     = NewMockPool()
 		conn     = NewMockConn()
@@ -274,7 +274,7 @@ func (s *ClientSuite) TestTransaction(t sweet.T) {
 	Consistently(commands).ShouldNot(Receive())
 }
 
-func (s *ClientSuite) TestTransactionNoConnection(t sweet.T) {
+func (s *ClientSuite) TestPipelineNoConnection(t sweet.T) {
 	var (
 		pool     = NewMockPool()
 		released = make(chan Conn, 1)
@@ -298,7 +298,7 @@ func (s *ClientSuite) TestTransactionNoConnection(t sweet.T) {
 	Consistently(released).ShouldNot(Receive())
 }
 
-func (s *ClientSuite) TestTransactionError(t sweet.T) {
+func (s *ClientSuite) TestPipelineError(t sweet.T) {
 	var (
 		pool     = NewMockPool()
 		conn     = NewMockConn()
@@ -334,7 +334,7 @@ func (s *ClientSuite) TestTransactionError(t sweet.T) {
 	Eventually(released).Should(Receive(BeNil()))
 }
 
-func (s *ClientSuite) TestTransactionRetryableError(t sweet.T) {
+func (s *ClientSuite) TestPipelineRetryableError(t sweet.T) {
 	var (
 		pool        = NewMockPool()
 		conn1       = NewMockConn()
@@ -386,7 +386,7 @@ func (s *ClientSuite) TestTransactionRetryableError(t sweet.T) {
 	Eventually(released).Should(Receive(Equal(conn2)))
 }
 
-func (s *ClientSuite) TestTransactionRetryableErrorAfterMulti(t sweet.T) {
+func (s *ClientSuite) TestPipelineRetryableErrorAfterMulti(t sweet.T) {
 	var (
 		pool        = NewMockPool()
 		conn1       = NewMockConn()
