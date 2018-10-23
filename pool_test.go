@@ -6,8 +6,11 @@ import (
 
 	"github.com/aphistic/sweet"
 	"github.com/efritz/glock"
+	. "github.com/efritz/go-mockgen/matchers"
 	"github.com/efritz/overcurrent"
 	. "github.com/onsi/gomega"
+
+	"github.com/efritz/deepjoy/mocks"
 )
 
 type PoolSuite struct{}
@@ -19,7 +22,7 @@ func (s *PoolSuite) TestNewPoolAtCapacity(t sweet.T) {
 		pool  = NewPool(
 			testDial,
 			20,
-			testLogger,
+			NilLogger,
 			noopBreakerFunc,
 			clock,
 		)
@@ -42,12 +45,12 @@ func (s *PoolSuite) TestNewPoolAtCapacity(t sweet.T) {
 
 func (s *PoolSuite) TestPoolDialOnNilConnection(t sweet.T) {
 	var (
-		conn = NewMockConn()
+		conn = mocks.NewMockConn()
 		dial = func() (Conn, error) { return conn, nil }
 		pool = NewPool(
 			dial,
 			20,
-			testLogger,
+			NilLogger,
 			noopBreakerFunc,
 			nil,
 		)
@@ -61,12 +64,12 @@ func (s *PoolSuite) TestPoolDialOnNilConnection(t sweet.T) {
 func (s *PoolSuite) TestPoolDialOnNilConnectionAfterRelease(t sweet.T) {
 	var (
 		dials = 0
-		conn  = NewMockConn()
+		conn  = mocks.NewMockConn()
 		dial  = func() (Conn, error) { dials++; return conn, nil }
 		pool  = NewPool(
 			dial,
 			20,
-			testLogger,
+			NilLogger,
 			noopBreakerFunc,
 			nil,
 		)
@@ -96,21 +99,15 @@ func (s *PoolSuite) TestPoolDialOnNilConnectionAfterRelease(t sweet.T) {
 
 func (s *PoolSuite) TestClose(t sweet.T) {
 	var (
-		closeCount = 0
-		conn       = NewMockConn()
-		pool       = NewPool(
+		conn = mocks.NewMockConn()
+		pool = NewPool(
 			testDial,
 			20,
-			testLogger,
+			NilLogger,
 			noopBreakerFunc,
 			nil,
 		)
 	)
-
-	conn.CloseFunc = func() error {
-		closeCount++
-		return nil
-	}
 
 	for i := 0; i < 15; i++ {
 		pool.Borrow()
@@ -126,27 +123,27 @@ func (s *PoolSuite) TestClose(t sweet.T) {
 
 	// Release the 10 live connections in pool
 	pool.Close()
-	Expect(closeCount).To(Equal(10))
+	Expect(conn.CloseFunc).To(BeCalledN(10))
 }
 
 func (s *PoolSuite) TestCloseBlocks(t sweet.T) {
 	var (
 		sync  = make(chan struct{})
 		block = make(chan struct{})
-		conn  = NewMockConn()
+		conn  = mocks.NewMockConn()
 		pool  = NewPool(
 			testDial,
 			20,
-			testLogger,
+			NilLogger,
 			noopBreakerFunc,
 			nil,
 		)
 	)
 
-	conn.CloseFunc = func() error {
+	conn.CloseFunc.SetDefaultHook(func() error {
 		<-block
 		return nil
-	}
+	})
 
 	for i := 0; i < 5; i++ {
 		pool.Borrow()
@@ -169,11 +166,11 @@ func (s *PoolSuite) TestCloseBlocks(t sweet.T) {
 func (s *PoolSuite) TestBorrowFavorsNonNil(t sweet.T) {
 	var (
 		dials = 0
-		conn  = NewMockConn()
+		conn  = mocks.NewMockConn()
 		pool  = NewPool(
 			func() (Conn, error) { dials++; return conn, nil },
 			20,
-			testLogger,
+			NilLogger,
 			noopBreakerFunc,
 			nil,
 		)
@@ -205,7 +202,7 @@ func (s *PoolSuite) TestPoolCapacity(t sweet.T) {
 		pool = NewPool(
 			testDial,
 			20,
-			testLogger,
+			NilLogger,
 			noopBreakerFunc,
 			nil,
 		)
@@ -232,7 +229,7 @@ func (s *PoolSuite) TestBorrowTimeout(t sweet.T) {
 		pool   = NewPool(
 			testDial,
 			20,
-			testLogger,
+			NilLogger,
 			noopBreakerFunc,
 			clock,
 		)
@@ -268,7 +265,7 @@ func (s *PoolSuite) TestCircuitBreaker(t sweet.T) {
 		pool = NewPool(
 			testDial,
 			20,
-			testLogger,
+			NilLogger,
 			breakerFunc,
 			nil,
 		)
@@ -286,5 +283,5 @@ func (s *PoolSuite) TestCircuitBreaker(t sweet.T) {
 }
 
 func testDial() (Conn, error) {
-	return NewMockConn(), nil
+	return mocks.NewMockConn(), nil
 }

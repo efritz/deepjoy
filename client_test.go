@@ -2,12 +2,16 @@ package deepjoy
 
 import (
 	"errors"
+	"fmt"
 	"io"
 	"time"
 
 	"github.com/aphistic/sweet"
 	"github.com/efritz/glock"
+	. "github.com/efritz/go-mockgen/matchers"
 	. "github.com/onsi/gomega"
+
+	"github.com/efritz/deepjoy/mocks"
 )
 
 type ClientSuite struct{}
@@ -15,15 +19,12 @@ type ClientSuite struct{}
 func (s *ClientSuite) TestConfigureReadReplica(t sweet.T) {
 	client := NewClient(
 		"master",
-		WithLogger(testLogger),
+		WithLogger(NilLogger),
 		WithReadReplicaAddrs("replica"),
 		WithDialerFactory(func(addrs []string) DialFunc {
 			return func() (Conn, error) {
-				c := NewMockConn()
-				c.DoFunc = func(command string, args ...interface{}) (interface{}, error) {
-					return addrs[0], nil
-				}
-
+				c := mocks.NewMockConn()
+				c.DoFunc.SetDefaultReturn(addrs[0], nil)
 				return c, nil
 			}
 		}),
@@ -35,53 +36,41 @@ func (s *ClientSuite) TestConfigureReadReplica(t sweet.T) {
 
 func (s *ClientSuite) TestReadReplica(t sweet.T) {
 	var (
-		pool1   = NewMockPool()
-		pool2   = NewMockPool()
-		conn1   = NewMockConn()
-		conn2   = NewMockConn()
-		called1 = 0
-		called2 = 0
+		pool1   = mocks.NewMockPool()
+		pool2   = mocks.NewMockPool()
+		conn1   = mocks.NewMockConn()
+		conn2   = mocks.NewMockConn()
 		client1 = makeClient(pool1, nil)
 		client2 = makeClient(pool2, nil)
 	)
 
 	client1.readReplicaClient = client2
-
-	pool1.BorrowFunc = func() (Conn, bool) { return conn1, true }
-	pool2.BorrowFunc = func() (Conn, bool) { return conn2, true }
-
-	conn1.DoFunc = func(command string, args ...interface{}) (interface{}, error) { called1++; return "", nil }
-	conn2.DoFunc = func(command string, args ...interface{}) (interface{}, error) { called2++; return "", nil }
+	pool1.BorrowFunc.SetDefaultReturn(conn1, true)
+	pool2.BorrowFunc.SetDefaultReturn(conn2, true)
 
 	client1.Do("foo")
-	Expect(called1).To(Equal(1))
-	Expect(called2).To(Equal(0))
+	Expect(conn1.DoFunc).To(BeCalledOnce())
+	Expect(conn2.DoFunc).NotTo(BeCalled())
 
 	replica := client1.ReadReplica()
 	replica.Do("foo")
 	Expect(replica).To(Equal(client2))
-	Expect(called1).To(Equal(1))
-	Expect(called2).To(Equal(1))
+	Expect(conn1.DoFunc).To(BeCalledOnce())
+	Expect(conn2.DoFunc).To(BeCalledOnce())
 }
 
 func (s *ClientSuite) TestCloseReadReplica(t sweet.T) {
 	var (
-		pool1   = NewMockPool()
-		pool2   = NewMockPool()
-		closed1 = false
-		closed2 = false
+		pool1   = mocks.NewMockPool()
+		pool2   = mocks.NewMockPool()
 		client1 = makeClient(pool1, nil)
 		client2 = makeClient(pool2, nil)
 	)
 
 	client1.readReplicaClient = client2
-
-	pool1.CloseFunc = func() { closed1 = true }
-	pool2.CloseFunc = func() { closed2 = true }
-
 	client1.Close()
-	Expect(closed1).To(BeTrue())
-	Expect(closed2).To(BeTrue())
+	Expect(pool1.CloseFunc).To(BeCalled())
+	Expect(pool2.CloseFunc).To(BeCalled())
 }
 
 func (s *ClientSuite) TestNilReadReplica(t sweet.T) {
@@ -90,129 +79,68 @@ func (s *ClientSuite) TestNilReadReplica(t sweet.T) {
 }
 
 func (s *ClientSuite) TestClose(t sweet.T) {
-	var (
-		pool   = NewMockPool()
-		called = false
-		c      = makeClient(pool, nil)
-	)
-
-	pool.CloseFunc = func() {
-		called = true
-	}
-
-	c.Close()
-	Expect(called).To(BeTrue())
+	pool := mocks.NewMockPool()
+	makeClient(pool, nil).Close()
+	Expect(pool.CloseFunc).To(BeCalled())
 }
 
 func (s *ClientSuite) TestDo(t sweet.T) {
 	var (
-		pool     = NewMockPool()
-		conn     = NewMockConn()
-		released = make(chan Conn, 1)
-		c        = makeClient(pool, nil)
+		pool = mocks.NewMockPool()
+		conn = mocks.NewMockConn()
+		c    = makeClient(pool, nil)
 	)
 
-	defer close(released)
-
-	pool.BorrowFunc = func() (Conn, bool) {
-		return conn, true
-	}
-
-	pool.ReleaseFunc = func(conn Conn) {
-		released <- conn
-	}
-
-	conn.DoFunc = func(command string, args ...interface{}) (interface{}, error) {
-		return []string{"BAR", "BAZ", "QUUX"}, nil
-	}
+	pool.BorrowFunc.SetDefaultReturn(conn, true)
+	conn.DoFunc.SetDefaultReturn([]string{"BAR", "BAZ", "QUUX"}, nil)
 
 	result, err := c.Do("upper", "bar", "baz", "quux")
 	Expect(err).To(BeNil())
 	Expect(result).To(Equal([]string{"BAR", "BAZ", "QUUX"}))
-	Expect(released).To(Receive(Equal(conn)))
+	Expect(pool.ReleaseFunc).To(BeCalledWith(conn))
 }
 
 func (s *ClientSuite) TestDoNoConnection(t sweet.T) {
 	var (
-		pool     = NewMockPool()
-		released = make(chan Conn, 1)
-		c        = makeClient(pool, nil)
+		pool = mocks.NewMockPool()
+		c    = makeClient(pool, nil)
 	)
-
-	defer close(released)
-
-	pool.BorrowFunc = func() (Conn, bool) {
-		return nil, false
-	}
-
-	pool.ReleaseFunc = func(conn Conn) {
-		released <- conn
-	}
 
 	_, err := c.Do("upper", "bar", "baz", "quux")
 	Expect(err).To(Equal(ErrNoConnection))
 
 	// Nothing to release
-	Consistently(released).ShouldNot(Receive())
+	Expect(pool.ReleaseFunc).NotTo(BeCalled())
 }
 
 func (s *ClientSuite) TestDoError(t sweet.T) {
 	var (
-		pool     = NewMockPool()
-		conn     = NewMockConn()
-		released = make(chan Conn, 1)
-		c        = makeClient(pool, nil)
+		pool = mocks.NewMockPool()
+		conn = mocks.NewMockConn()
+		c    = makeClient(pool, nil)
 	)
 
-	defer close(released)
-
-	pool.BorrowFunc = func() (Conn, bool) {
-		return conn, true
-	}
-
-	pool.ReleaseFunc = func(conn Conn) {
-		released <- conn
-	}
-
-	conn.DoFunc = func(command string, args ...interface{}) (interface{}, error) {
-		return nil, errors.New("utoh")
-	}
+	pool.BorrowFunc.SetDefaultReturn(conn, true)
+	conn.DoFunc.SetDefaultReturn(nil, errors.New("utoh"))
 
 	_, err := c.Do("upper", "bar", "baz", "quux")
 	Expect(err).To(MatchError("utoh"))
-	Expect(released).To(Receive(BeNil()))
+	Expect(pool.ReleaseFunc).To(BeCalledWith(BeNil()))
 }
 
 func (s *ClientSuite) TestDoRetryableError(t sweet.T) {
 	var (
-		pool        = NewMockPool()
-		conn1       = NewMockConn()
-		conn2       = NewMockConn()
-		clock       = glock.NewMockClock()
-		borrowCount = 0
-		released    = make(chan Conn, 2)
-		c           = makeClient(pool, clock)
+		pool  = mocks.NewMockPool()
+		conn1 = mocks.NewMockConn()
+		conn2 = mocks.NewMockConn()
+		clock = glock.NewMockClock()
+		c     = makeClient(pool, clock)
 	)
 
-	defer close(released)
-
-	pool.BorrowFunc = func() (Conn, bool) {
-		c := []Conn{conn1, conn2}[borrowCount]
-		borrowCount++
-		return c, true
-	}
-
-	pool.ReleaseFunc = func(conn Conn) {
-		released <- conn
-	}
-
-	conn1.DoFunc = func(command string, args ...interface{}) (interface{}, error) {
-		return nil, connErr{io.EOF}
-	}
-
-	conn2.DoFunc = func(command string, args ...interface{}) (interface{}, error) {
-		return []string{"BAR", "BAZ", "QUUX"}, nil
-	}
+	pool.BorrowFunc.PushReturn(conn1, true)
+	pool.BorrowFunc.PushReturn(conn2, true)
+	conn1.DoFunc.SetDefaultReturn(nil, connErr{io.EOF})
+	conn2.DoFunc.SetDefaultReturn([]string{"BAR", "BAZ", "QUUX"}, nil)
 
 	go func() {
 		// Unlock the after call in client
@@ -222,39 +150,19 @@ func (s *ClientSuite) TestDoRetryableError(t sweet.T) {
 	result, err := c.Do("upper", "bar", "baz", "quux")
 	Expect(err).To(BeNil())
 	Expect(result).To(Equal([]string{"BAR", "BAZ", "QUUX"}))
-	Expect(released).To(Receive(BeNil()))
-	Expect(released).To(Receive(Equal(conn2)))
+	Expect(pool.ReleaseFunc).To(BeCalledWith(BeNil()))
+	Expect(pool.ReleaseFunc).To(BeCalledWith(conn2))
 }
 
 func (s *ClientSuite) TestPipeline(t sweet.T) {
 	var (
-		pool     = NewMockPool()
-		conn     = NewMockConn()
-		released = make(chan Conn, 1)
-		commands = make(chan commandPair, 5)
-		c        = makeClient(pool, nil)
+		pool = mocks.NewMockPool()
+		conn = mocks.NewMockConn()
+		c    = makeClient(pool, nil)
 	)
 
-	defer close(released)
-	defer close(commands)
-
-	pool.BorrowFunc = func() (Conn, bool) {
-		return conn, true
-	}
-
-	pool.ReleaseFunc = func(conn Conn) {
-		released <- conn
-	}
-
-	conn.DoFunc = func(command string, args ...interface{}) (interface{}, error) {
-		commands <- commandPair{command, args}
-		return []int{1, 2, 3, 4}, nil
-	}
-
-	conn.SendFunc = func(command string, args ...interface{}) error {
-		commands <- commandPair{command, args}
-		return nil
-	}
+	pool.BorrowFunc.SetDefaultReturn(conn, true)
+	conn.DoFunc.SetDefaultReturn([]int{1, 2, 3, 4}, nil)
 
 	pipeline := c.Pipeline()
 	pipeline.Add("foo", 1, 2, 3)
@@ -265,64 +173,37 @@ func (s *ClientSuite) TestPipeline(t sweet.T) {
 	Expect(err).To(BeNil())
 	Expect(result).To(Equal([]int{1, 2, 3, 4}))
 
-	Eventually(released).Should(Receive(Equal(conn)))
-	Eventually(commands).Should(Receive(Equal(commandPair{"MULTI", nil})))
-	Eventually(commands).Should(Receive(Equal(commandPair{"foo", []interface{}{1, 2, 3}})))
-	Eventually(commands).Should(Receive(Equal(commandPair{"bar", []interface{}{2, 3, 4}})))
-	Eventually(commands).Should(Receive(Equal(commandPair{"baz", []interface{}{3, 4, 5}})))
-	Eventually(commands).Should(Receive(Equal(commandPair{"EXEC", nil})))
-	Consistently(commands).ShouldNot(Receive())
+	Expect(pool.ReleaseFunc).To(BeCalledWith(conn))
+	Expect(conn.SendFunc).To(BeCalledWith("MULTI"))
+	Expect(conn.SendFunc).To(BeCalledWith("foo", 1, 2, 3))
+	Expect(conn.SendFunc).To(BeCalledWith("bar", 2, 3, 4))
+	Expect(conn.SendFunc).To(BeCalledWith("baz", 3, 4, 5))
+	Expect(conn.DoFunc).To(BeCalledWith("EXEC"))
 }
 
 func (s *ClientSuite) TestPipelineNoConnection(t sweet.T) {
 	var (
-		pool     = NewMockPool()
-		released = make(chan Conn, 1)
-		c        = makeClient(pool, nil)
+		pool = mocks.NewMockPool()
+		c    = makeClient(pool, nil)
 	)
-
-	defer close(released)
-
-	pool.BorrowFunc = func() (Conn, bool) {
-		return nil, false
-	}
-
-	pool.ReleaseFunc = func(conn Conn) {
-		released <- conn
-	}
 
 	_, err := c.Pipeline().Run()
 	Expect(err).To(Equal(ErrNoConnection))
 
 	// Nothing to release
-	Consistently(released).ShouldNot(Receive())
+	Expect(pool.ReleaseFunc).NotTo(BeCalled())
 }
 
 func (s *ClientSuite) TestPipelineError(t sweet.T) {
 	var (
-		pool     = NewMockPool()
-		conn     = NewMockConn()
-		released = make(chan Conn, 1)
-		c        = makeClient(pool, nil)
+		pool = mocks.NewMockPool()
+		conn = mocks.NewMockConn()
+		c    = makeClient(pool, nil)
 	)
 
-	defer close(released)
-
-	pool.BorrowFunc = func() (Conn, bool) {
-		return conn, true
-	}
-
-	pool.ReleaseFunc = func(conn Conn) {
-		released <- conn
-	}
-
-	conn.SendFunc = func(command string, args ...interface{}) error {
-		if command == "bar" {
-			return errors.New("utoh")
-		}
-
-		return nil
-	}
+	pool.BorrowFunc.SetDefaultReturn(conn, true)
+	conn.SendFunc.PushReturn(nil)
+	conn.SendFunc.PushReturn(fmt.Errorf("utoh"))
 
 	pipeline := c.Pipeline()
 	pipeline.Add("foo", 1, 2, 3)
@@ -331,43 +212,22 @@ func (s *ClientSuite) TestPipelineError(t sweet.T) {
 	_, err := pipeline.Run()
 
 	Expect(err).To(MatchError("utoh"))
-	Eventually(released).Should(Receive(BeNil()))
+	Expect(pool.ReleaseFunc).To(BeCalledWith(BeNil()))
 }
 
 func (s *ClientSuite) TestPipelineRetryableError(t sweet.T) {
 	var (
-		pool        = NewMockPool()
-		conn1       = NewMockConn()
-		clock       = glock.NewMockClock()
-		borrowCount = 0
-		conn2       = NewMockConn()
-		released    = make(chan Conn, 2)
-		c           = makeClient(pool, clock)
+		pool  = mocks.NewMockPool()
+		conn1 = mocks.NewMockConn()
+		clock = glock.NewMockClock()
+		conn2 = mocks.NewMockConn()
+		c     = makeClient(pool, clock)
 	)
 
-	defer close(released)
-
-	pool.BorrowFunc = func() (Conn, bool) {
-		c := []Conn{conn1, conn2}[borrowCount]
-		borrowCount++
-		return c, true
-	}
-
-	pool.ReleaseFunc = func(conn Conn) {
-		released <- conn
-	}
-
-	conn2.DoFunc = func(command string, args ...interface{}) (interface{}, error) {
-		return []int{1, 2, 3, 4}, nil
-	}
-
-	conn1.SendFunc = func(command string, args ...interface{}) error {
-		if borrowCount == 1 && command == "MULTI" {
-			return connErr{io.ErrUnexpectedEOF}
-		}
-
-		return nil
-	}
+	pool.BorrowFunc.PushReturn(conn1, true)
+	pool.BorrowFunc.PushReturn(conn2, true)
+	conn2.DoFunc.SetDefaultReturn([]int{1, 2, 3, 4}, nil)
+	conn1.SendFunc.PushReturn(connErr{io.ErrUnexpectedEOF})
 
 	go func() {
 		// Unlock the after call in client
@@ -382,44 +242,24 @@ func (s *ClientSuite) TestPipelineRetryableError(t sweet.T) {
 
 	Expect(err).To(BeNil())
 	Expect(result).To(Equal([]int{1, 2, 3, 4}))
-	Eventually(released).Should(Receive(BeNil()))
-	Eventually(released).Should(Receive(Equal(conn2)))
+	Expect(pool.ReleaseFunc).To(BeCalledWith(BeNil()))
+	Expect(pool.ReleaseFunc).To(BeCalledWith(conn2))
 }
 
 func (s *ClientSuite) TestPipelineRetryableErrorAfterMulti(t sweet.T) {
 	var (
-		pool        = NewMockPool()
-		conn1       = NewMockConn()
-		clock       = glock.NewMockClock()
-		borrowCount = 0
-		conn2       = NewMockConn()
-		released    = make(chan Conn, 2)
-		c           = makeClient(pool, clock)
+		pool  = mocks.NewMockPool()
+		conn1 = mocks.NewMockConn()
+		clock = glock.NewMockClock()
+		conn2 = mocks.NewMockConn()
+		c     = makeClient(pool, clock)
 	)
 
-	defer close(released)
-
-	pool.BorrowFunc = func() (Conn, bool) {
-		c := []Conn{conn1, conn2}[borrowCount]
-		borrowCount++
-		return c, true
-	}
-
-	pool.ReleaseFunc = func(conn Conn) {
-		released <- conn
-	}
-
-	conn2.DoFunc = func(command string, args ...interface{}) (interface{}, error) {
-		return []int{1, 2, 3, 4}, nil
-	}
-
-	conn1.SendFunc = func(command string, args ...interface{}) error {
-		if borrowCount == 1 && command == "bar" {
-			return connErr{io.ErrUnexpectedEOF}
-		}
-
-		return nil
-	}
+	pool.BorrowFunc.PushReturn(conn1, true)
+	pool.BorrowFunc.PushReturn(conn2, true)
+	conn2.DoFunc.SetDefaultReturn([]int{1, 2, 3, 4}, nil)
+	conn1.SendFunc.PushReturn(nil)
+	conn1.SendFunc.PushReturn(connErr{io.ErrUnexpectedEOF})
 
 	go func() {
 		// Unlock the after call in client
@@ -435,8 +275,8 @@ func (s *ClientSuite) TestPipelineRetryableErrorAfterMulti(t sweet.T) {
 	Expect(err).To(BeNil())
 	Expect(result).To(Equal([]int{1, 2, 3, 4}))
 
-	Eventually(released).Should(Receive(BeNil()))
-	Eventually(released).Should(Receive(Equal(conn2)))
+	Expect(pool.ReleaseFunc).To(BeCalledWith(BeNil()))
+	Expect(pool.ReleaseFunc).To(BeCalledWith(conn2))
 }
 
 //
@@ -447,6 +287,6 @@ func makeClient(pool Pool, clock glock.Clock) *client {
 		pool:    pool,
 		backoff: defaultBackoff,
 		clock:   clock,
-		logger:  testLogger,
+		logger:  NilLogger,
 	}
 }
