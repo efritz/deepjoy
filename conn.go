@@ -1,21 +1,16 @@
 package deepjoy
 
-import "github.com/gomodule/redigo/redis"
+import (
+	"math/rand"
+
+	"github.com/gomodule/redigo/redis"
+
+	"github.com/efritz/deepjoy/iface"
+)
 
 type (
 	// Conn abstracts a single, feature-minimal connection to Redis.
-	Conn interface {
-		// Close the connection to the remote Redis server.
-		Close() error
-
-		// Do performs a command on the remote Redis server and returns
-		// its result.
-		Do(command string, args ...interface{}) (interface{}, error)
-
-		// Send will publish command as part of a MULTI/EXEC sequence
-		// to the remote Redis server.
-		Send(command string, args ...interface{}) error
-	}
+	Conn = iface.Conn
 
 	// DialFunc creates a connection to Redis or returns an error.
 	DialFunc func() (Conn, error)
@@ -54,6 +49,14 @@ func makeDefaultDialerFactory(config *clientConfig) DialerFactory {
 			return &redigoShim{conn}, nil
 		}
 	}
+}
+
+func chooseRandom(addrs []string) string {
+	if len(addrs) == 0 {
+		return ""
+	}
+
+	return addrs[rand.Intn(len(addrs))]
 }
 
 func (s *redigoShim) Close() error {

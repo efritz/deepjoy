@@ -1,17 +1,21 @@
 package deepjoy
 
-import "log"
+import (
+	"log"
+
+	"github.com/efritz/deepjoy/iface"
+)
 
 type (
 	// Logger is an interface to the logger the client writes to.
-	Logger interface {
-		// Printf logs a message. Arguments should be handled in the manner of fmt.Printf.
-		Printf(format string, args ...interface{})
-	}
+	Logger = iface.Logger
 
 	printLogger struct{}
 	nilLogger   struct{}
 )
+
+// NilLogger is a singleton silent logger.
+var NilLogger = NewNilLogger()
 
 // NewPrintLogger creates a logger that prints to stdout.
 func NewPrintLogger() Logger {
