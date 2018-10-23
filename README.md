@@ -10,9 +10,9 @@ in a pool. This library is named after [Y-40](http://www.y-40.com/en/).
 
 ## Example
 
-First, instantiate a client with any of hte following optional config functions.
+First, instantiate a client with any of the following optional config functions.
 The only required parameter is the address of the remote Redis server - all other
-values have sane (hopefully) defaults.
+values have (hopefully) sane defaults.
 
 ```go
 client := NewClient(
